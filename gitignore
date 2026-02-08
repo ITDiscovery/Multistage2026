@@ -1,0 +1,19 @@
+# Build artifacts
+build/
+bin/
+*.o
+*.obj
+*.so
+*.dll
+*.exe
+*.a
+*.lib
+
+# System files (Mac/Linux)
+.DS_Store
+Thumbs.db
+
+# IDE settings (VS Code, etc.)
+.vscode/
+.idea/
+*.swp
