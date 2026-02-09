@@ -1,0 +1,5 @@
+/home/peter/Multistage2026/build/CMakeFiles/edit_cache.dir
+/home/peter/Multistage2026/build/CMakeFiles/rebuild_cache.dir
+/home/peter/Multistage2026/build/sources/CMakeFiles/Multistage2026.dir
+/home/peter/Multistage2026/build/sources/CMakeFiles/edit_cache.dir
+/home/peter/Multistage2026/build/sources/CMakeFiles/rebuild_cache.dir
