@@ -57,10 +57,13 @@ VECTOR3 CharToVec(const std::string& str) {
     return v;
 }
 
-VECTOR4 CharToVec4(const std::string& str) {
-    VECTOR4 v = {0,0,0,0};
-    if (str.empty()) return v;
-    sscanf(str.c_str(), "%lf,%lf,%lf,%lf", &v.x, &v.y, &v.z, &v.t);
+VECTOR4F Multistage2026::CharToVec4(const std::string& str)
+{
+    VECTOR4F v;
+    if (sscanf(str.c_str(), "%lf,%lf,%lf,%lf", &v.x, &v.y, &v.z, &v.t) != 4) {
+        // Handle error or default
+        v.x = v.y = v.z = v.t = 0.0;
+    }
     return v;
 }
 
@@ -244,9 +247,9 @@ void Multistage2026::parseStages(char* filename) {
             if (strlen(engVal) == 0) break; // Stop if no more engines defined
 
             // Parse as Vec4 (x,y,z, throttle_delay) or Vec3
-            VECTOR4 ev4 = CharToVec4(engVal); // You'll need CharToVec4 helper
-            stage.at(i).engV4.at(e) = ev4; 
-            stage.at(i).eng.at(e) = _V(ev4.x, ev4.y, ev4.z);
+            VECTOR4F ev4 = CharToVec4(engVal);
+            stage.at(i).engV4.at(e) = ev4;
+            stage.at(i).eng[e] = _V(ev4.x, ev4.y, ev4.z);
 
             // Safety check for throttle delay
             if ((stage.at(i).engV4.at(e).t <= 0) || (stage.at(i).engV4.at(e).t > 10)) {
@@ -393,8 +396,8 @@ void Multistage2026::parseBoosters(char* filename) {
             snprintf(curveKey, sizeof(curveKey), "CURVE_%i", cc + 1);
             // Default: "High endurance" if undefined (9000000 sec, 100% thrust)
             const char* curveVal = ini.GetValue(sectionName, curveKey, "9000000,100,0");
-            booster.at(b).curve.at(cc) = CharToVec(curveVal);
-            booster.at(b).curve.at(cc).z = 0; // Ensure Z is clean
+            booster.at(b).curve[cc] = CharToVec(curveVal);
+            booster.at(b).curve[cc].z = 0; // Ensure Z is clean
         }
 
         // 4. Explosive Bolts
@@ -780,89 +783,117 @@ void Multistage2026::parseSound(char* filename) {
 // Telemetry & Guidance Parsing (Text/CSV Files)
 // ==============================================================
 
-void Multistage2026::parseTelemetryFile(char* filename) {
-    // Telemetry files are CSVs: Time,Alt,Spd,Pitch,Thrust,Mass,Vv,Acc
-    // We use standard fopen because SimpleIni expects Key=Value pairs.
-
-    FILE* f = fopen(filename, "rt");
-    if (!f) {
-        // Try looking in Config/ if direct path fails
-        char altpath[256];
-        snprintf(altpath, sizeof(altpath), "Config/%s", filename);
-        f = fopen(altpath, "rt");
-        if (!f) {
-            oapiWriteLogV("%s: Telemetry file not found: %s", GetName(), filename);
-            return;
-        }
+void Multistage2026::parseTelemetryFile(char* name)
+{
+    FILE* fVal = fopen(name, "r");
+    if (fVal == NULL) {
+        // Try looking in Config/ folder if not found directly
+        char path[256];
+        sprintf(path, "Config/%s", name);
+        fVal = fopen(path, "r");
     }
 
-    char buffer[1024];
-    // Skip Header Lines (Usually 2 lines in generated files)
-    fgets(buffer, 1024, f); // "<--!Multistage 2026...>"
-    fgets(buffer, 1024, f); // "MET,Altitude,Speed..."
+    if (fVal != NULL) {
+        char line[512];
+        int i = 0;
+        
+        // Skip header if present (optional, but good practice)
+        // fgets(line, 512, fVal); 
 
-    int i = 0;
-    // Limit to 100,000 points or whatever your MAX_TLM is defined as
-    while (fgets(buffer, 1024, f) && i < 100000) {
-        double t, alt, spd, pch, th, m, vv, acc;
-        // Parse CSV Line
-        if (sscanf(buffer, "%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf", 
-            &t, &alt, &spd, &pch, &th, &m, &vv, &acc) == 8) {
-            // Store in Reference Arrays (X=Time, Y=Value)
-            ReftlmAlt[i] = _V(t, alt, 0);
-            ReftlmSpeed[i] = _V(t, spd, 0);
-            ReftlmPitch[i] = _V(t, pch, 0);
-            ReftlmThrust[i] = _V(t, th, 0);
-            ReftlmMass[i] = _V(t, m, 0);
-            ReftlmVv[i] = _V(t, vv, 0);
-            ReftlmAcc[i] = _V(t, acc, 0);
-            i++;
+        while (fgets(line, 512, fVal) != NULL && i < TLMSECS) {
+            double t, alt, spd, pch, th, m, vv, acc;
+            
+            // Parse the line: Time, Alt, Speed, Pitch, Thrust, Mass, VV, Acc
+            int count = sscanf(line, "%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf", 
+                               &t, &alt, &spd, &pch, &th, &m, &vv, &acc);
+
+            if (count >= 8) {
+                // Populate Reference Arrays (IVECTOR2: x=Time, y=Value)
+                ReftlmAlt[i].x = t;     ReftlmAlt[i].y = alt;
+                ReftlmSpeed[i].x = t;   ReftlmSpeed[i].y = spd;
+                ReftlmPitch[i].x = t;   ReftlmPitch[i].y = pch;
+                ReftlmThrust[i].x = t;  ReftlmThrust[i].y = th;
+                ReftlmMass[i].x = t;    ReftlmMass[i].y = m;
+                ReftlmVv[i].x = t;      ReftlmVv[i].y = vv;
+                ReftlmAcc[i].x = t;     ReftlmAcc[i].y = acc;
+                
+                i++;
+            }
         }
+        
+        fclose(fVal);
+        loadedtlmlines = i;
+        wReftlm = true;
+        sprintf(oapiDebugString(), "Telemetry Loaded: %d lines", i);
+    } else {
+        wReftlm = false;
+        sprintf(oapiDebugString(), "Telemetry File Not Found: %s", name);
     }
-    nReftlm = i;
-    fclose(f);
-    oapiWriteLogV("%s: Telemetry Loaded (%d points)", GetName(), nReftlm);
 }
 
-void Multistage2026::parseGuidanceFile(char* filename) {
-    // Guidance files are simple text: "Time Pitch [Yaw]"
-    // Example: 
-    // 0 90
-    // 10 85
-    FILE* f = fopen(filename, "rt");
-    if (!f) {
-        char altpath[256];
-        snprintf(altpath, sizeof(altpath), "Config/%s", filename);
-        f = fopen(altpath, "rt");
-        if (!f) {
-            oapiWriteLogV("%s: Guidance file not found: %s", GetName(), filename);
-            return;
-        }
+void Multistage2026::parseGuidanceFile(char* filename)
+{
+    FILE* fVal = fopen(filename, "r");
+    if (fVal == NULL) {
+        char path[256];
+        sprintf(path, "Config/%s", filename);
+        fVal = fopen(path, "r");
     }
 
-    char buffer[1024];
-    int i = 0;
+    if (fVal != NULL) {
+        char line[512];
+        int i = 1; // 1-based index for Gnc_step matches legacy logic
+        
+        while (fgets(line, 512, fVal) != NULL && i < 500) {
+            // Clear temporary vars
+            double t = 0;
+            char cmdStr[32] = {0};
+            double v1=0, v2=0, v3=0, v4=0, v5=0, v6=0;
 
-    // Read until end of file
-    while (fgets(buffer, 1024, f) && i < 2000) { // Limit to reasonable steps
-        // Skip comments (lines starting with / or #)
-        if (buffer[0] == '/' || buffer[0] == '#' || strlen(buffer) < 2) continue;
+            // Scan: Time Command Val1 Val2 ...
+            int count = sscanf(line, "%lf %s %lf %lf %lf %lf %lf %lf", 
+                               &t, cmdStr, &v1, &v2, &v3, &v4, &v5, &v6);
 
-        double t, p, y = 0.0;
-        int items = sscanf(buffer, "%lf %lf %lf", &t, &p, &y);
-        if (items >= 2) {
-            GuidanceTable[i].t = t;
-            GuidanceTable[i].pitch = p * RAD; // Convert to Radians
-            GuidanceTable[i].yaw = (items == 3) ? y * RAD : 0.0;
-            i++;
+            if (count >= 2) {
+                Gnc_step[i].time = t;
+                strcpy(Gnc_step[i].Comand, cmdStr); // Store string version
+                
+                // Map String to Integer ID (CM_ constants from header)
+                if (_stricmp(cmdStr, "pitch") == 0) Gnc_step[i].GNC_Comand = CM_PITCH;
+                else if (_stricmp(cmdStr, "roll") == 0) Gnc_step[i].GNC_Comand = CM_ROLL;
+                else if (_stricmp(cmdStr, "yaw") == 0) Gnc_step[i].GNC_Comand = CM_ATTITUDE; // Often mapped to attitude
+                else if (_stricmp(cmdStr, "engine") == 0) Gnc_step[i].GNC_Comand = CM_ENGINE;
+                else if (_stricmp(cmdStr, "fairing") == 0) Gnc_step[i].GNC_Comand = CM_FAIRING;
+                else if (_stricmp(cmdStr, "jettison") == 0) Gnc_step[i].GNC_Comand = CM_JETTISON;
+                else if (_stricmp(cmdStr, "les") == 0) Gnc_step[i].GNC_Comand = CM_LES;
+                else if (_stricmp(cmdStr, "target") == 0) Gnc_step[i].GNC_Comand = CM_TARGET;
+                else if (_stricmp(cmdStr, "orbit") == 0) Gnc_step[i].GNC_Comand = CM_ORBIT;
+                else if (_stricmp(cmdStr, "disable_pitch") == 0) Gnc_step[i].GNC_Comand = CM_DISABLE_PITCH;
+                else if (_stricmp(cmdStr, "disable_roll") == 0) Gnc_step[i].GNC_Comand = CM_DISABLE_ROLL;
+                else Gnc_step[i].GNC_Comand = CM_NOLINE; // Unknown or Comment
+
+                // Store parameters
+                Gnc_step[i].val_init = v1; // Primary value usually here
+                Gnc_step[i].trval1 = v1;
+                Gnc_step[i].trval2 = v2;
+                Gnc_step[i].trval3 = v3;
+                Gnc_step[i].trval4 = v4;
+                Gnc_step[i].trval5 = v5;
+                Gnc_step[i].trval6 = v6;
+                
+                Gnc_step[i].executed = false;
+                i++;
+            }
         }
+        
+        fclose(fVal);
+        nsteps = i - 1;
+        stepsloaded = true;
+    } else {
+        stepsloaded = false;
+        // Optionally log error
     }
-
-    nGuidanceSteps = i;
-    fclose(f);
-    oapiWriteLogV("%s: Guidance Loaded (%d steps)", GetName(), nGuidanceSteps);
 }
-
 
 // ==============================================================
 // Master Parse Function

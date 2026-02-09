@@ -44,7 +44,7 @@
 
 #include <cmath>
 #include <cstdio>
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 #include "Multistage2026.h"
 
 // Update frequency constants

@@ -72,10 +72,8 @@
 // BOOL IsPlaying
 // BOOL PlayVesselRadioExclusiveWave
 // BOOL IsRadioPlaying
-// BOOL ReplaceStockSound				- 4.0 Please read warning in function
-'s header below!
-// BOOL SoundOptionOnOff				- 4.0 Please read warning in function
-'s header below!
+// BOOL ReplaceStockSound				- 4.0 Please read warning in function's header below!
+// BOOL SoundOptionOnOff				- 4.0 Please read warning in function's header below!
 // BOOL SetRadioFrequency
 //
 // IMPORTANT NOTE:
@@ -112,136 +110,61 @@
 // Linux/Port Safe Header
 //////////////////////////////////////////////////////////////////////////////////////////
 
-#ifndef __ORBITERSOUND40_SDK
-#define __ORBITERSOUND40_SDK
+#ifndef ORBITERSOUNDSDK40_H
+#define ORBITERSOUNDSDK40_H
 
-// Ensure standard Orbiter types (VECTOR3, DWORD, BOOL) are defined
-#include "orbitersdk.h" 
+// -- LINUX STUB FOR ORBITERSOUND --
+#include "Orbitersdk.h"
 
-// NOTE: The original #pragma comment(lib...) has been removed for cross-platform compatibility.
-// Linking must be handled by the build system (CMake/Makefile).
+// Define types used in the main code to prevent errors
+typedef int BOOL;
+#ifndef TRUE
+#define TRUE 1
+#endif
+#ifndef FALSE
+#define FALSE 0
+#endif
 
-////////////////////////////////////////////
-// KEYWORDS
-////////////////////////////////////////////
+// Define Constants expected by parser
+#define SI_MOVE 1
+#define SI_cockpit 2
+#define SI_mech 3
+#define DYNAMIC_LOAD_VER 1
+#define STATIC_LOAD_VER 2
+#define BOTH 0
+#define RADIO_ONLY 1
+#define SOUND_ONLY 2
+#define LOOP 1
+#define NOLOOP 0
+#define LOG_IN_ORBITER_LOG 1
+#define DISPLAY_ON_SCREEN 2
 
-//These are the keywords used by SoundOptionOnOff()
-#define PLAYCOUNTDOWNWHENTAKEOFF		1
-#define PLAYWHENATTITUDEMODECHANGE		3
-#define PLAYGPWS						4
-#define PLAYMAINTHRUST					5
-#define PLAYHOVERTHRUST					6
-#define PLAYATTITUDETHRUST				7
-#define PLAYDOCKINGSOUND				8
-#define PLAYRADARBIP					9
-#define PLAYWINDAIRSPEED				10
-#define PLAYDOCKLANDCLEARANCE			11
-#define PLAYLANDINGANDGROUNDSOUND		12
-#define PLAYCABINAIRCONDITIONING		13
-#define PLAYCABINRANDOMAMBIANCE			14
-#define PLAYWINDAMBIANCEWHENLANDED		15
-#define PLAYRADIOATC					16
-#define DISPLAYTIMER					17
-#define DISABLEAUTOPILOTWHENTIMEWARP 	18
-#define ALLOWRADIOBLACKOUT				19
-#define MUTEORBITERSOUND				20
-#define PLAYRETROTHRUST					21
-#define PLAYUSERTHRUST					22
-#define PLAYWINDCOCKPITOPEN				23
-#define PLAYREENTRYAIRSPEED				24
+// Dummy Class
+class OrbiterSoundSDK40 {
+public:
+    OrbiterSoundSDK40(VESSEL *v) {}
+    ~OrbiterSoundSDK40() {}
+};
 
-//These are the keywords used by ReplaceStockSound()
-#define REPLACE_MAIN_THRUST					10
-#define REPLACE_HOVER_THRUST				11
-#define REPLACE_RCS_THRUST_ATTACK			12
-#define REPLACE_RCS_THRUST_SUSTAIN			13
-#define REPLACE_AIR_CONDITIONNING	 		14
-#define REPLACE_COCKPIT_AMBIENCE_1	 		15
-#define REPLACE_COCKPIT_AMBIENCE_2			16
-#define REPLACE_COCKPIT_AMBIENCE_3			17
-#define REPLACE_COCKPIT_AMBIENCE_4			18
-#define REPLACE_COCKPIT_AMBIENCE_5	 		19
-#define REPLACE_COCKPIT_AMBIENCE_6			20
-#define REPLACE_COCKPIT_AMBIENCE_7			21
-#define REPLACE_COCKPIT_AMBIENCE_8			22
-#define REPLACE_COCKPIT_AMBIENCE_9			23
-#define REPLACE_MODE_ROTATION				24
-#define REPLACE_MODE_TRANSLATION			25
-#define REPLACE_MODE_ATTITUDEOFF			26
-#define REPLACE_WIND_AIRSPEED				27
-#define REPLACE_REENTRY_AIRSPEED			28
-#define REPLACE_LAND_TOUCHDOWN				29
-#define REPLACE_GROUND_ROLL					30
-#define REPLACE_WHEELBRAKE		   			31
-#define REPLACE_CRASH_SOUND					32
-#define REPLACE_DOCKING						33
-#define REPLACE_UNDOCKING					34
-#define REPLACE_RADIOLANDCLEARANCE	 		35
-#define REPLACE_DOCKING_RADIO				36
-#define REPLACE_UNDOCKING_RADIO		 		37
-#define REPLACE_RADAR_APPROACH		 		38
-#define REPLACE_RADAR_CLOSE					39
-#define REPLACE_RETRO_THRUST		 		40
-#define REPLACE_USER_THRUST					41
-#define REPLACE_COUNTDOWN_WHENTAKEOFF 		42
-#define REPLACEALLGPWSSOUND_README_FOR_USE	43
+// Dummy Functions (All return success/noop)
+inline int ConnectToOrbiterSound(OBJHANDLE h, int m) { return 0; }
+inline bool RequestLoadVesselWave(int i, int w, char* f, int t) { return true; }
+inline bool PlayVesselWave(int i, int w, int l=0, int v=255, int f=0) { return true; }
+inline bool StopVesselWave(int i, int w) { return true; }
+inline bool IsPlaying(int i, int w) { return false; }
+inline bool SetVesselWaveVolume(int i, int w, int v) { return true; }
+inline bool SetVesselWaveFrequency(int i, int w, int f) { return true; }
+inline bool SoundOptionOnOff(int i, int o, bool s) { return true; }
+inline bool PlayVesselRadioExclusiveWave(int i, int w, int v=255) { return true; }
+inline bool IsRadioPlaying() { return false; }
+inline bool SetRadioFrequency(char* f) { return true; }
+inline bool ReplaceStockSound(int i, char* c, int w) { return true; }
 
-// This is the structure used by Set3dWaveParameters
-typedef struct OS3DCONE {
-    DWORD dwInsideConeAngle;
-    DWORD dwOutsideConeAngle;
-    VECTOR3 vConeOrientation;
-    double lConeOutsideVolume;
-} OS3DCONE;
+// 3D Sound Stubs (The compiler was complaining about these missing)
+typedef struct { float fMin; float fMax; } OS3DCONE; // Dummy struct
+typedef int EXTENDEDPLAY; 
+inline bool RequestLoad3DWaveMono(int i, int w, char* n, EXTENDEDPLAY e, VECTOR3* p) { return true; }
+inline bool RequestLoad3DWaveStereo(int i, int w, char* n, EXTENDEDPLAY e, VECTOR3* l, VECTOR3* r) { return true; }
+inline bool Set3dWaveParameters(int i, int w, VECTOR3* l=0, VECTOR3* r=0, float* min=0, float* max=0, OS3DCONE* c=0) { return true; }
 
-// These are the keywords used by PlayVesselWave
-#define NOLOOP	0
-#define LOOP	1
-
-// These are the keywords used by "RequestLoadWave***()"
-typedef enum{
-		DEFAULT,
-		INTERNAL_ONLY,
-		BOTHVIEW_FADED_CLOSE,
-		BOTHVIEW_FADED_MEDIUM,
-		BOTHVIEW_FADED_FAR,
-		EXTERNAL_ONLY_FADED_CLOSE,
-		EXTERNAL_ONLY_FADED_MEDIUM,
-		EXTERNAL_ONLY_FADED_FAR,
-		RADIO_SOUND,
-}EXTENDEDPLAY;
-
-
-///////////////////////////////////////////////////
-// FUNCTION DECLARATIONS
-///////////////////////////////////////////////////
-
-// Connection
-int  ConnectToOrbiterSoundDLL(OBJHANDLE Obj);
-
-// Utility
-BOOL SetMyDefaultWaveDirectory(char *MySoundDirectory);
-float GetUserOrbiterSoundVersion(void);
-BOOL IsOrbiterSound3D(void);
-
-// Loading (3D)
-BOOL RequestLoad3DWaveMono(int iMyID,int iWavNumber,char* cSoundName,EXTENDEDPLAY extended,VECTOR3* v3Position);
-BOOL RequestLoad3DWaveStereo(int iMyID,int iWavNumber,char* cSoundName,EXTENDEDPLAY extended,VECTOR3* v3LeftPos,VECTOR3* v3RightPos);
-BOOL Set3dWaveParameters(int iMyID,int WavNumber,VECTOR3 *vLeftPos=NULL,VECTOR3 *vRightPos=NULL,float *flMinDistance=NULL,float *flMaxDistance=NULL,OS3DCONE *soundConeParm=NULL);
-
-// Loading (2D)
-BOOL RequestLoadVesselWave(int MyID,int WavNumber,char* SoundName,EXTENDEDPLAY extended);
-
-// Playback
-BOOL PlayVesselWave(int MyID,int WavNumber,int Loop=NOLOOP,int Volume=255,int Frequency=0);
-BOOL StopVesselWave(int MyID,int WavNumber);
-BOOL IsPlaying(int MyID,int WavNumber);
-BOOL PlayVesselRadioExclusiveWave(int MyID,int WavNumber,int Volume=255);
-
-// Customization
-BOOL ReplaceStockSound(int iMyId,char *cMyCustomWavName,int iWhichSoundToReplace);
-BOOL SoundOptionOnOff(int MyID,int Option, BOOL Status=TRUE);
-BOOL IsRadioPlaying(void);
-BOOL SetRadioFrequency(char* Frequency);
-
-#endif //__ORBITERSOUND40_SDK
+#endif

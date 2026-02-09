@@ -47,6 +47,8 @@
 #include "Multistage2026.h"
 #include "Multistage2026_MFD.h"
 
+const double mu = 398600.4418e9;
+
 // ==============================================================
 // Creation & Destruction
 // This is the "Birth" and "Death" of the rocket. It initializes
@@ -266,8 +268,8 @@ Multistage2026::Multistage2026(OBJHANDLE hObj, int fmodel) :VESSEL3(hObj, fmodel
     loadedConfiguration = 0; loadedCurrentBooster = 0; loadedCurrentInterstage = 0;
     loadedCurrentPayload = 0; loadedCurrentStage = 0; loadedGrowing = false;
     loadedMET = 0.0; loadedtlmlines = 0; loadedwFairing = 0;
-    mass = 0.0; mu = 0.0; nPayloads = 0; nPsh = 0; note = nullptr; nsteps = 0;
-    omega = 0.0; op = {}; padramp = nullptr;
+    mass = 0.0; nPayloads = 0; nPsh = 0; note = nullptr; nsteps = 0;
+    omega = 0.0; padramp = nullptr;
 
     for (int i = 0; i < 10; i++) {
         for (int j = 0; j < 5; j++) {
@@ -292,11 +294,11 @@ Multistage2026::Multistage2026(OBJHANDLE hObj, int fmodel) :VESSEL3(hObj, fmodel
     vtheta = 0.0; vvec = _V(0, 0, 0); z = 0.0;
 
     buffreset[0] = '\0'; dataparsed[0] = '\0'; fileini[0] = '\0';
-    guidancefile[0] = '\0'; logbuff[0] = '\0'; tex = {0}; tlmfile[0] = '\0';
+    guidancefile[0] = '\0'; logbuff[0] = '\0'; tex = TEX(); tlmfile[0] = '\0';
 }
 
 Multistage2026::~Multistage2026() {
-    if (psg) delete[] psg;
+    psg.clear();
     for (int i = 0; i < 10; i++) {
         for (int j = 0; j < 5; j++) {
             delete payloadrotatex[i][j];
@@ -339,19 +341,6 @@ VECTOR3 Multistage2026::CharToVec(const std::string& str) {
     char comma;
     ss >> x >> comma >> y >> comma >> z;
     return _V(x, y, z);
-}
-
-VECTOR4F Multistage2026::CharToVec4(const std::string &str) {
-    std::string s = str;
-    s.erase(std::remove(s.begin(), s.end(), '('), s.end());
-    s.erase(std::remove(s.begin(), s.end(), ')'), s.end());
-    std::replace(s.begin(), s.end(), ';', ',');
-    std::stringstream ss(s);
-    double x = 0.0, y = 0.0, z = 0.0, t = 0.0;
-    char comma;
-    ss >> x >> comma >> y >> comma >> z >> comma >> t;
-    VECTOR4F outvec; outvec.x = x; outvec.y = y; outvec.z = z; outvec.t = t;
-    return outvec;
 }
 
 VECTOR3 Multistage2026::RotateVecZ(VECTOR3 input, double Angle) {
@@ -702,7 +691,7 @@ void Multistage2026::CreateMainThruster() {
     SetDefaultPropellantResource(stage.at(currentStage).tank);
 
     for (int i = 0; i < stage.at(currentStage).nEngines; i++) {
-        exhaustN[currentStage][i] = AddExhaust(stage.at(currentStage).th_main_h.at(i), 10 * stage.at(currentStage).eng_diameter * stage.at(currentStage).engV4[i].t, stage.at(currentStage).eng_diameter * stage.at(currentStage).engV4[i].t, stage.at(currentStage).eng[i], operator*(stage.at(currentStage).eng_dir, -1), GetProperExhaustTexture((char*)stage.at(currentStage).eng_tex.data()));
+        AddExhaust(stage.at(currentStage).th_main_h.at(i), 10 * stage.at(currentStage).eng_diameter * stage.at(currentStage).engV4[i].t, stage.at(currentStage).eng_diameter * stage.at(currentStage).engV4[i].t, stage.at(currentStage).eng[i], operator*(stage.at(currentStage).eng_dir, -1), GetProperExhaustTexture((char*)stage.at(currentStage).eng_tex.data()));
 
         if (!stage.at(currentStage).ParticlesPacked) {
             if (stage.at(currentStage).wps1) {
@@ -811,112 +800,6 @@ void Multistage2026::CreateRCS() {
         stage.at(currentStage).th_att_h[1] = CreateThruster(_V(0, 0, 0), _V(0, -1, 0), stage.at(currentStage).linearthrust * 0.5, stage.at(currentStage).tank, stage.at(currentStage).linearisp);
         CreateThrusterGroup(stage.at(currentStage).th_att_h.data(), 2, THGROUP_ATT_DOWN);
     }
-}
-
-void Multistage2026::CreateMainThruster() {
-    if (stage.at(currentStage).nEngines == 0) {
-        // If no engines defined, create a default dummy one
-        stage.at(currentStage).nEngines = 1;
-        stage.at(currentStage).eng[0].x = 0;
-        stage.at(currentStage).eng[0].y = 0;
-        stage.at(currentStage).eng[0].z = -stage.at(currentStage).height * 0.5;
-    }
-
-    // Default pressure to Earth sea level if ISPref is set but pressure is missing
-    // Modded by rcraig42 in Multistage2015 to add ispref and pref to createthruster
-    if ((stage.at(currentStage).ispref >= 0) && (stage.at(currentStage).pref == 0)) {
-        stage.at(currentStage).pref = 101400.0;
-    }
-
-    // Create Thrusters based on Real Position setting
-    if (Misc.thrustrealpos) {
-        for (int i = 0; i < stage.at(currentStage).nEngines; i++) {
-            stage.at(currentStage).th_main_h.at(i) = CreateThruster(stage.at(currentStage).off, stage.at(currentStage).eng_dir, stage.at(currentStage).thrust / stage.at(currentStage).nEngines, stage.at(currentStage).tank, stage.at(currentStage).isp, stage.at(currentStage).ispref, stage.at(currentStage).pref);
-        }
-    } else {
-        for (int i = 0; i < stage.at(currentStage).nEngines; i++) {
-            stage.at(currentStage).th_main_h.at(i) = CreateThruster(_V(0, 0, 0), _V(0, 0, 1), stage.at(currentStage).thrust / stage.at(currentStage).nEngines, stage.at(currentStage).tank, stage.at(currentStage).isp, stage.at(currentStage).ispref, stage.at(currentStage).pref);
-        }
-    }
-
-    thg_h_main = CreateThrusterGroup(stage.at(currentStage).th_main_h.data(), stage.at(currentStage).nEngines, THGROUP_MAIN);
-    SetDefaultPropellantResource(stage.at(currentStage).tank);
-
-    // Create Exhausts and Particles
-    for (int i = 0; i < stage.at(currentStage).nEngines; i++) {
-        // Safe cast for texture string
-        SURFHANDLE tex = GetProperExhaustTexture((char*)stage.at(currentStage).eng_tex.c_str());
-
-        exhaustN[currentStage][i] = AddExhaust(stage.at(currentStage).th_main_h.at(i), 
-                                               10 * stage.at(currentStage).eng_diameter * stage.at(currentStage).engV4[i].t, 
-                                               stage.at(currentStage).eng_diameter * stage.at(currentStage).engV4[i].t, 
-                                               stage.at(currentStage).eng[i], 
-                                               operator*(stage.at(currentStage).eng_dir, -1), 
-                                               tex);
-
-        if (!stage.at(currentStage).ParticlesPacked) {
-            if (stage.at(currentStage).wps1) {
-                PARTICLESTREAMSPEC Pss1 = GetProperPS((char*)stage.at(currentStage).eng_pstream1.c_str()).Pss;
-                AddExhaustStreamGrowing(stage.at(currentStage).th_main_h.at(i), stage.at(currentStage).eng[i], &Pss1, GetProperPS((char*)stage.at(currentStage).eng_pstream1.c_str()).Growing, GetProperPS((char*)stage.at(currentStage).eng_pstream1.c_str()).GrowFactor_size, GetProperPS((char*)stage.at(currentStage).eng_pstream1.c_str()).GrowFactor_rate, TRUE, false, currentStage, i);
-
-                snprintf(logbuff, sizeof(logbuff), "%s: Stage n.%i Engine Exhaust Stream Added: %s to engine n.%i", GetName(), currentStage + 1, stage.at(currentStage).eng_pstream1.c_str(), i + 1);
-                oapiWriteLog(logbuff);
-            }
-            if (stage.at(currentStage).wps2) {
-                PARTICLESTREAMSPEC Pss2 = GetProperPS((char*)stage.at(currentStage).eng_pstream2.c_str()).Pss;
-                AddExhaustStreamGrowing(stage.at(currentStage).th_main_h.at(i), stage.at(currentStage).eng[i], &Pss2, GetProperPS((char*)stage.at(currentStage).eng_pstream2.c_str()).Growing, GetProperPS((char*)stage.at(currentStage).eng_pstream2.c_str()).GrowFactor_size, GetProperPS((char*)stage.at(currentStage).eng_pstream2.c_str()).GrowFactor_rate, TRUE, false, currentStage, i);
-                snprintf(logbuff, sizeof(logbuff), "%s: Stage n.%i Engine Exhaust Stream Added: %s to engine n.%i", GetName(), currentStage + 1, stage.at(currentStage).eng_pstream2.c_str(), i + 1);
-                oapiWriteLog(logbuff);
-            }
-        }
-        snprintf(logbuff, sizeof(logbuff), "%s: Stage n. %i Engines Exhaust Added--> number of engines: %i , diameter: %.3f, position x: %.3f y: %.3f z: %.3f", GetName(), currentStage + 1, stage.at(currentStage).nEngines, stage.at(currentStage).eng_diameter * stage.at(currentStage).engV4[i].t, stage.at(currentStage).eng[i].x, stage.at(currentStage).eng[i].y, stage.at(currentStage).eng[i].z);
-        oapiWriteLog(logbuff);
-    }
-
-    // Packed Particles Logic (For multi-nozzle shared effects)
-    if (stage.at(currentStage).ParticlesPacked) {
-        PARTICLESTREAMSPEC partpacked[2];
-        partpacked[0] = GetProperPS((char*)stage.at(currentStage).eng_pstream1.c_str()).Pss;
-        partpacked[1] = GetProperPS((char*)stage.at(currentStage).eng_pstream2.c_str()).Pss;
-
-        int engine = abs(stage.at(currentStage).ParticlesPackedToEngine) - 1;
-        VECTOR3 Pos[2];
-
-        if (stage.at(currentStage).ParticlesPackedToEngine > 0) {
-            Pos[0] = stage.at(currentStage).eng[engine];
-            Pos[1] = stage.at(currentStage).eng[engine];
-        } else {
-            double Posx = 0, Posy = 0, Posz = 0;
-            for (int x = 0; x < stage.at(currentStage).nEngines; x++) {
-                Posx += stage.at(currentStage).eng[x].x;
-                Posy += stage.at(currentStage).eng[x].y;
-                Posz += stage.at(currentStage).eng[x].z;
-            }
-            Pos[0] = _V(Posx / stage.at(currentStage).nEngines, Posy / stage.at(currentStage).nEngines, Posz / stage.at(currentStage).nEngines);
-            Pos[1] = Pos[0];
-        }
-
-        if (stage.at(currentStage).wps1) {
-            AddExhaustStreamGrowing(stage.at(currentStage).th_main_h.at(engine), Pos[0], &partpacked[0], GetProperPS((char*)stage.at(currentStage).eng_pstream1.c_str()).Growing, GetProperPS((char*)stage.at(currentStage).eng_pstream1.c_str()).GrowFactor_size, GetProperPS((char*)stage.at(currentStage).eng_pstream1.c_str()).GrowFactor_rate, TRUE, false, currentStage, engine);
-            snprintf(logbuff, sizeof(logbuff), "%s: Stage n.%i Engine Packed Exhaust Stream Added: %s to engine n.%i", GetName(), currentStage + 1, stage.at(currentStage).eng_pstream1.c_str(), engine + 1);
-            oapiWriteLog(logbuff);
-        }
-        if (stage.at(currentStage).wps2) {
-            AddExhaustStreamGrowing(stage.at(currentStage).th_main_h.at(engine), Pos[1], &partpacked[1], GetProperPS((char*)stage.at(currentStage).eng_pstream2.c_str()).Growing, GetProperPS((char*)stage.at(currentStage).eng_pstream2.c_str()).GrowFactor_size, GetProperPS((char*)stage.at(currentStage).eng_pstream2.c_str()).GrowFactor_rate, TRUE, false, currentStage, engine);
-            snprintf(logbuff, sizeof(logbuff), "%s: Stage n.%i Engine Packed Exhaust Stream Added: %s to engine n.%i", GetName(), currentStage + 1, stage.at(currentStage).eng_pstream2.c_str(), engine + 1);
-            oapiWriteLog(logbuff);
-        }
-    }
-
-    if (stage.at(currentStage).DenyIgnition) {
-        for (int i = 0; i < stage.at(currentStage).nEngines; i++) {
-            SetThrusterResource(stage.at(currentStage).th_main_h.at(i), NULL);
-        }
-    }
-
-    // Add Engine Light
-    LightEmitter* le = AddPointLight(stage.at(currentStage).eng[0], 200, 1e-3, 0, 2e-3, col_d, col_s, col_a);
-    le->SetIntensityRef(&th_main_level);
 }
 
 // ==============================================================
@@ -1387,8 +1270,8 @@ void Multistage2026::VehicleSetup() {
     for (int pb = 0; pb < nBoosters; pb++) nPsh += (booster.at(pb).N * booster.at(pb).nEngines);
     nPsh *= 2; // Buffer
 
-    if (psg) delete[] psg;
-    psg = new PSGROWING[nPsh];
+    psg.clear();
+    psg.resize(nPsh);
     // Initialize defaults
     for (int ps = 0; ps < nPsh; ps++) {
         psg[ps] = PSGROWING();
@@ -2858,7 +2741,8 @@ void Multistage2026::clbkLoadStateEx(FILEHANDLE scn, void* vs)
 // Input Handling (Keyboard)
 // ==============================================================
 
-int Multistage2026::clbkConsumeBufferedKey(DWORD key, bool down, char* kstate) {
+// Updated signature to match header
+int Multistage2026::clbkConsumeBufferedKey(int key, bool down, char* kstate) {
     if (!down) return 0;
 
     // 'J' Key: Jettison Logic
@@ -2959,7 +2843,7 @@ void Multistage2026::AttachToMSPad(OBJHANDLE hPad) {
 
 int Multistage2026::clbkConsumeDirectKey(char* kstate) {
     if (HangarMode) {
-        vhangar->clbkConsumeDirectKey(kstate);
+        //vhangar->clbkConsumeDirectKey(kstate);
         if (AttToMSPad) {
             VECTOR3 pos, dir, rot;
             GetAttachmentParams(AttToRamp, pos, dir, rot);
@@ -3188,8 +3072,8 @@ void Multistage2026::clbkPostCreation(void) {
 
     // 1. Initialize Visuals
     // Check if we are focusing on the vessel to setup camera
-    OBJHANDLE hFocus = oapiGetFocusInterface();
-    if (hFocus == GetHandle()) {
+    VESSEL* hFocus = oapiGetFocusInterface();
+    if ((OBJHANDLE)hFocus == GetHandle()) {
         SetCameraOffset(_V(0, 0, 100)); // Default view distance
     }
 
@@ -3277,9 +3161,9 @@ void Multistage2026::CreateHangar() {
             vhangar = (VESSEL3*)oapiGetVesselInterface(hHangar);
 
             // Setup attachment to hangar roof/crane
-            ahangar = vhangar->CreateAttachment(false, _V(0, 26, 0), _V(0, 1, 0), _V(0, 0, 1), (char*)"Hangar", false);
+            hhangar = vhangar->CreateAttachment(false, _V(0, 26, 0), _V(0, 1, 0), _V(0, 0, 1), (char*)"Hangar", false);
             AttToHangar = CreateAttachment(TRUE, _V(0, 43, 0), _V(0, 1, 0), _V(0, 0, 1), (char*)"Hangar", false);
-            vhangar->AttachChild(GetHandle(), ahangar, AttToHangar);
+            vhangar->AttachChild(GetHandle(), hhangar, AttToHangar);
         } else {
             oapiWriteLogV("Error: Multistage2015_Hangar vessel class not found.");
             HangarMode = false; // Disable if missing
@@ -3312,7 +3196,7 @@ void Multistage2026::CreateCamera() {
 // Pad Logic & Getters
 // ==============================================================
 
-void Multistage2026::Ramp() {
+void Multistage2026::Ramp(bool alreadyramp) {
     // If enabled, spawns the launch clamp/tower mesh at the base
     if ((wRamp) && (!HangarMode)) {
         VESSELSTATUS2 vs;
@@ -3335,7 +3219,8 @@ void Multistage2026::Ramp() {
 
             // Add the visible mesh to the pad vessel
             MESHHANDLE hMesh = oapiLoadMeshGlobal("Multistage2015_Pad"); // Default mesh
-            vramp->AddMesh(hMesh, &_V(0, 0, 0));
+            const VECTOR3 zero = _V(0,0,0);
+            vramp->AddMesh(hMesh, &zero);
         }
     }
 }
@@ -3361,7 +3246,7 @@ int Multistage2026::clbkGeneric(int msgid, int prm, void* context) {
 
     // MFD Request: "Give me your current status"
     case VMSG_USER:
-        return (int)this; // Return pointer to self so MFD can read data
+        return (long)this; // Return pointer to self so MFD can read data
 
     // Command: "Jettison Next Stage" (From MFD Button)
     case VMSG_JETTISON:
@@ -3381,22 +3266,12 @@ int Multistage2026::clbkGeneric(int msgid, int prm, void* context) {
 }
 
 // ==============================================================
-// Module Init
+// OPENORBITER MODULE REGISTRATION
 // ==============================================================
 
 DLLCLBK void InitModule(HINSTANCE hModule)
 {
-    // Register the Vessel Class
-    VESSEL_CLASS_SPEC vcs;
-    vcs.name = "Multistage2026";
-    vcs.desc = "General Purpose Multistage Launch Vehicle (2026 Port)";
-    vcs.data = NULL;
-    vcs.flag = 0;
-
-    // Register the vessel
-    g_VesselClass = oapiRegisterVesselClass(vcs); // Assuming g_VesselClass is defined globally
-
-    // Register the MFD
+    // Register the MFD (Critical)
     Multistage2026_MFD::InitMFD(hModule);
 }
 
@@ -3404,12 +3279,20 @@ DLLCLBK void ExitModule(HINSTANCE hModule)
 {
     // Unregister MFD
     Multistage2026_MFD::ExitMFD(hModule);
-
-    // Unregister Vessel
-    oapiUnregisterVesselClass(g_VesselClass);
 }
 
-DLLCLBK VESSEL* ovcInit(OBJHANDLE hvessel, int flightmodel) { return new Multistage2026(hvessel, flightmodel); }
-DLLCLBK void ovcExit(VESSEL* vessel) { if (vessel) delete (Multistage2026*)vessel; }
+// OpenOrbiter Vessel Factory (Replaces oapiRegisterVesselClass)
+DLLCLBK VESSEL *ovcInit (OBJHANDLE hvessel, int flightmodel)
+{
+    return new Multistage2026 (hvessel, flightmodel);
+}
+
+DLLCLBK void ovcExit (VESSEL *vessel)
+{
+    if (vessel) delete (Multistage2026*)vessel;
+}
+
+// Module Date Export
+DLLCLBK const char *ModuleDate () { return __DATE__; }
 
 // --- END OF FILE ---

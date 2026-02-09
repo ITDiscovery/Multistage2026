@@ -43,10 +43,12 @@
 #include <string>
 #include <algorithm> // For std::min, std::max
 
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 #include "Multistage2026.h"
 
 using namespace std;
+
+const double mu = 398600.4418e9;
 
 // Helper for Sign
 template <typename T> int SignOf(T val) {
@@ -485,7 +487,7 @@ void Multistage2026::VinkaPitch(int step) {
     
     TgtPitch = DesiredPitch;
     if (spinning) {
-        Attitude(DesiredPitch, GetBank(), GetProperHeading());
+        Attitude(DesiredPitch, GetBank(), GetProperHeading(), 0, 0, 0);
     } else {
         Attitude(DesiredPitch, (0.5 * (1 - VinkaMode) * PI), GetProperHeading(), 10, 10, 10);
     }

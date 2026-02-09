@@ -47,8 +47,10 @@
 #include <algorithm>
 
 // Use standard local include
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 #include "Multistage2026.h"
+
+const double mu = 398600.4418e9; // Standard Earth Gravitational Parameter
 
 using namespace std;
 
@@ -165,6 +167,7 @@ void Multistage2026::CalculateTargets()
 }
 
 bool Multistage2026::CutoffCheck() {
+    ORBITPARAM op;
     OBJHANDLE hearth = GetSurfaceRef();
     GetElements(hearth, el, &op, 0, 1);
     eps = -mu / (2 * el.a);

@@ -46,7 +46,7 @@
 #define _CRT_NONSTDC_NO_DEPRECATE
 
 // Standard Orbitersdk header
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 
 // Include main vessel header
 #include "Multistage2026.h"
@@ -79,8 +79,8 @@ public:
     char* ButtonLabel(int bt);
     int ButtonMenu(const MFDBUTTONMENU** menu) const;
     bool Update(oapi::Sketchpad* skp);
-    static OAPI_MSGTYPE MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam);
-    
+    static OAPI_MSGTYPE MsgProc(MFD_msg msg, MfdId mfd, MFDMODEOPENSPEC* spec, VESSEL* vessel);
+
     // Persistence
     void StoreStatus(void) const;
     void RecallStatus(void);

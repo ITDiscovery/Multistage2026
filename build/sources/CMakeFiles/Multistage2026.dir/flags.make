@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = -DMultistage2026_EXPORTS -DORBITER_MODULE -D_GNU_SOURCE
 
-CXX_INCLUDES = -I/home/peter/Multistage2026/sources/. -I/home/peter/Multistage2026/sources/../simpleini -I/home/peter/Multistage2026/Orbitersdk/include
+CXX_INCLUDES = -I/home/peter/Multistage2026/sources/. -I/home/peter/Multistage2026/sources/../simpleini -I/home/peter/orbiter/Orbitersdk/include
 
 CXX_FLAGS = -std=gnu++17 -fPIC -w
 

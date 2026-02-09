@@ -25,6 +25,11 @@ You install and use Multistage2015 at your own risk, author will not be responsi
 #define _CRT_SECURE_NO_WARNINGS
 #define _CRT_NONSTDC_NO_DEPRECATE
 
+#ifndef OAPI_MSG_MFD_OPENED
+#define OAPI_MSG_MFD_OPENED 0
+#endif
+
+
 using namespace oapi;
 
 // ==============================================================
@@ -42,7 +47,7 @@ void Multistage2026_MFD::InitMFD(HINSTANCE hDLL)
     spec.name = name;
     spec.key = OAPI_KEY_T;
     spec.context = NULL;
-    spec.msgproc = Multistage2026_MFD::MsgProc;
+    spec.msgproc = Multistage2026_MFD::MsgProc; 
     g_MFDmode = oapiRegisterMFDMode(spec);
 }
 
@@ -52,29 +57,29 @@ void Multistage2026_MFD::ExitMFD(HINSTANCE hDLL)
 }
 
 // ==============================================================
-// Helper Functions for Input Boxes
+// Helper Functions for Input Boxes (Updated for OpenOrbiter)
 // ==============================================================
 
-bool InputStep(void* id, char* str, void* usrdata) {
-    return (((Multistage2026_MFD*)usrdata)->AddStep(str));
+bool InputStep(void* id, const char* str, void* usrdata) {
+    return (((Multistage2026_MFD*)usrdata)->AddStep((char*)str));
 }
-bool SetRange(void* id, char* str, void* usrdata) {
-    return (((Multistage2026_MFD*)usrdata)->MFDSetRange(str));
+bool SetRange(void* id, const char* str, void* usrdata) {
+    return (((Multistage2026_MFD*)usrdata)->MFDSetRange((char*)str));
 }
-bool LoadTlmFile(void* id, char* str, void* usrdata) {
-    return (((Multistage2026_MFD*)usrdata)->MFDLoadTlmFile(str));
+bool LoadTlmFile(void* id, const char* str, void* usrdata) {
+    return (((Multistage2026_MFD*)usrdata)->MFDLoadTlmFile((char*)str));
 }
-bool InputInterval(void* id, char* str, void* usrdata) {
-    return (((Multistage2026_MFD*)usrdata)->InputPMCInterval(str));
+bool InputInterval(void* id, const char* str, void* usrdata) {
+    return (((Multistage2026_MFD*)usrdata)->InputPMCInterval((char*)str));
 }
-bool SetAltSteps(void* id, char* str, void* usrdata) {
-    return (((Multistage2026_MFD*)usrdata)->InputAltSteps(str));
+bool SetAltSteps(void* id, const char* str, void* usrdata) {
+    return (((Multistage2026_MFD*)usrdata)->InputAltSteps((char*)str));
 }
-bool SetNewPitchLimit(void* id, char* str, void* usrdata) {
-    return (((Multistage2026_MFD*)usrdata)->InputNewPitchLimit(str));
+bool SetNewPitchLimit(void* id, const char* str, void* usrdata) {
+    return (((Multistage2026_MFD*)usrdata)->InputNewPitchLimit((char*)str));
 }
-bool NewRefVessel(void* id, char* str, void* usrdata) {
-    return (((Multistage2026_MFD*)usrdata)->InputNewRefVessel(str));
+bool NewRefVessel(void* id, const char* str, void* usrdata) {
+    return (((Multistage2026_MFD*)usrdata)->InputNewRefVessel((char*)str));
 }
 
 // ==============================================================
@@ -414,23 +419,48 @@ bool Multistage2026_MFD::ConsumeButton(int bt, int event)
 
 void Multistage2026_MFD::UpdateTlmValues()
 {
-    // Copy data from vessel to local buffers
+    if (!Ms) return;
+
+    // Copy data from vessel to local buffers with explicit casting for IVECTOR2
     for (int i = 0; i < Ms->tlmidx; i++) {
-        MFDtlmAlt[i] = Ms->tlmAlt[i];
-        MFDtlmAcc[i] = { Ms->tlmAcc[i].x, (int)(Ms->tlmAcc[i].y * 100) };
-        MFDtlmVv[i] = { Ms->tlmVv[i].x, (int)(Ms->tlmVv[i].y * 10) };
-        MFDtlmSpeed[i] = { Ms->tlmSpeed[i].x, (int)(Ms->tlmSpeed[i].y * 10) };
-        MFDtlmThrust[i] = Ms->tlmThrust[i];
-        MFDtlmPitch[i] = { Ms->tlmPitch[i].x, (int)(Ms->tlmPitch[i].y * 100) };
+        MFDtlmAlt[i].x = (int)Ms->tlmAlt[i].x;
+        MFDtlmAlt[i].y = (int)Ms->tlmAlt[i].y;
+
+        MFDtlmAcc[i].x = (int)Ms->tlmAcc[i].x;
+        MFDtlmAcc[i].y = (int)(Ms->tlmAcc[i].y * 100);
+
+        MFDtlmVv[i].x = (int)Ms->tlmVv[i].x;
+        MFDtlmVv[i].y = (int)(Ms->tlmVv[i].y * 10);
+
+        MFDtlmSpeed[i].x = (int)Ms->tlmSpeed[i].x;
+        MFDtlmSpeed[i].y = (int)(Ms->tlmSpeed[i].y * 10);
+
+        MFDtlmThrust[i].x = (int)Ms->tlmThrust[i].x;
+        MFDtlmThrust[i].y = (int)Ms->tlmThrust[i].y;
+
+        MFDtlmPitch[i].x = (int)Ms->tlmPitch[i].x;
+        MFDtlmPitch[i].y = (int)(Ms->tlmPitch[i].y * 100);
     }
+
     // Copy Ref data
     for (int j = 0; j < TLMSECS; j++) {
-        RefMFDtlmAlt[j] = Ms->ReftlmAlt[j];
-        RefMFDtlmSpeed[j] = { Ms->ReftlmSpeed[j].x, (int)(Ms->ReftlmSpeed[j].y * 10) };
-        RefMFDtlmAcc[j] = { Ms->ReftlmAcc[j].x, (int)(Ms->ReftlmAcc[j].y * 100) };
-        RefMFDtlmVv[j] = { Ms->ReftlmVv[j].x, (int)(Ms->ReftlmVv[j].y * 10) };
-        RefMFDtlmThrust[j] = Ms->ReftlmThrust[j];
-        RefMFDtlmPitch[j] = { Ms->ReftlmPitch[j].x, (int)(Ms->ReftlmPitch[j].y * 100) };
+        RefMFDtlmAlt[j].x = (int)Ms->ReftlmAlt[j].x;
+        RefMFDtlmAlt[j].y = (int)Ms->ReftlmAlt[j].y;
+
+        RefMFDtlmSpeed[j].x = (int)Ms->ReftlmSpeed[j].x;
+        RefMFDtlmSpeed[j].y = (int)(Ms->ReftlmSpeed[j].y * 10);
+
+        RefMFDtlmAcc[j].x = (int)Ms->ReftlmAcc[j].x;
+        RefMFDtlmAcc[j].y = (int)(Ms->ReftlmAcc[j].y * 100);
+
+        RefMFDtlmVv[j].x = (int)Ms->ReftlmVv[j].x;
+        RefMFDtlmVv[j].y = (int)(Ms->ReftlmVv[j].y * 10);
+
+        RefMFDtlmThrust[j].x = (int)Ms->ReftlmThrust[j].x;
+        RefMFDtlmThrust[j].y = (int)Ms->ReftlmThrust[j].y;
+
+        RefMFDtlmPitch[j].x = (int)Ms->ReftlmPitch[j].x;
+        RefMFDtlmPitch[j].y = (int)(Ms->ReftlmPitch[j].y * 100);
     }
 }
 
@@ -566,7 +596,6 @@ bool Multistage2026_MFD::Update(oapi::Sketchpad* skp)
                 skp->Rectangle(margin + ltw, line * (i + 2) + 7, (int)(fl * (W - 2 * margin - rtw - ltw - 3) + margin + ltw), line * (i + 3) + 3);
                 skp->SetBrush(NULL);
             }
-
             for (int i = Ms->currentStage; i < Ms->nStages; i++)
             {
                 skp->SetBrush(NULL);
@@ -580,11 +609,11 @@ bool Multistage2026_MFD::Update(oapi::Sketchpad* skp)
 
                 skp->SetPen(NULL);
                 skp->SetBrush(mydarkblue);
+                // Fixed ltw scope issue by ensuring it's defined before loop
                 skp->Rectangle(margin + ltw, line * (i + 11) + 2, (int)(fl * (W - 2 * margin - rtw - ltw - 3) + margin + ltw), line * (i + 12) - 2);
                 skp->SetBrush(NULL);
                 skp->SetPen(penwhite);
             }
-
             skp->Line(0, middleH - 5, W, middleH - 5);
             skp->Line(0, line + 3, W, line + 3);
             skp->Line(0, 19 * line - 5, W, 19 * line - 5);
@@ -1289,11 +1318,11 @@ bool Multistage2026_MFD::Update(oapi::Sketchpad* skp)
     return true;
 }
 
-OAPI_MSGTYPE Multistage2026_MFD::MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam)
+OAPI_MSGTYPE Multistage2026_MFD::MsgProc(MFD_msg msg, MfdId mfd, MFDMODEOPENSPEC* spec, VESSEL* vessel)
 {
     switch (msg) {
-    case OAPI_MSG_MFD_OPENED:
-        return (OAPI_MSGTYPE)(new Multistage2026_MFD(LOWORD(wparam), HIWORD(wparam), (VESSEL*)lparam));
+        case OAPI_MSG_MFD_OPENED: // Fixed constant name
+            return (OAPI_MSGTYPE)(new Multistage2026_MFD(spec->w, spec->h, vessel));
     }
     return 0;
 }

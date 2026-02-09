@@ -1,6 +1,7 @@
 # Build artifacts
 build/
 bin/
+lib/
 *.o
 *.obj
 *.so
@@ -9,11 +10,16 @@ bin/
 *.a
 *.lib
 
-# System files (Mac/Linux)
-.DS_Store
-Thumbs.db
+# Orbiter SDK (We point to it externally, don't upload it)
+Orbitersdk/
+include/Orbitersdk/
 
-# IDE settings (VS Code, etc.)
+# IDE Settings
 .vscode/
 .idea/
 *.swp
+*~
+
+# Local User Configs (Optional)
+Orbiter.cfg
+
