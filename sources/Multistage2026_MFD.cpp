@@ -15,15 +15,9 @@ You CAN use parts of the code of Multistage2015, but in this case you MUST:
 You CAN NOT use the entire code for making and distributing the very same module claiming it>
 You CAN NOT claim that Multistage2015 is an invention of yourself or a work made up by yours>
 You install and use Multistage2015 at your own risk, author will not be responsible for any >
-********************************************************************************************>
-// ==============================================================
-//              
-// Multistage2026_MFD.cpp
-//
-// ==============================================================
+********************************************************************************************/
 
 #define STRICT
-// #define ORBITER_MODULE // Removed: Defined in CMake
 #include "Multistage2026_MFD.h"
 #include <cstdio>
 #include <cstring>
@@ -41,23 +35,19 @@ int g_MFDmode; // identifier for new MFD mode
 // ==============================================================
 // API interface
 
-// NOTE: Renamed from InitModule to prevent conflict with Vessel DLL
 void Multistage2026_MFD::InitMFD(HINSTANCE hDLL)
 {
-    static char* name = const_cast<char*>("Multistage2026_MFD");   // MFD mode name
+    static char* name = const_cast<char*>("Multistage2026_MFD");
     MFDMODESPECEX spec;
     spec.name = name;
-    spec.key = OAPI_KEY_T;                // MFD mode selection key
+    spec.key = OAPI_KEY_T;
     spec.context = NULL;
-    spec.msgproc = Multistage2026_MFD::MsgProc;  // MFD mode callback function
-
-    // Register the new MFD mode with Orbiter
+    spec.msgproc = Multistage2026_MFD::MsgProc;
     g_MFDmode = oapiRegisterMFDMode(spec);
 }
 
 void Multistage2026_MFD::ExitMFD(HINSTANCE hDLL)
 {
-    // Unregister the custom MFD mode when the module is unloaded
     oapiUnregisterMFDMode(g_MFDmode);
 }
 
@@ -68,27 +58,21 @@ void Multistage2026_MFD::ExitMFD(HINSTANCE hDLL)
 bool InputStep(void* id, char* str, void* usrdata) {
     return (((Multistage2026_MFD*)usrdata)->AddStep(str));
 }
-
 bool SetRange(void* id, char* str, void* usrdata) {
     return (((Multistage2026_MFD*)usrdata)->MFDSetRange(str));
 }
-
 bool LoadTlmFile(void* id, char* str, void* usrdata) {
     return (((Multistage2026_MFD*)usrdata)->MFDLoadTlmFile(str));
 }
-
 bool InputInterval(void* id, char* str, void* usrdata) {
     return (((Multistage2026_MFD*)usrdata)->InputPMCInterval(str));
 }
-
 bool SetAltSteps(void* id, char* str, void* usrdata) {
     return (((Multistage2026_MFD*)usrdata)->InputAltSteps(str));
 }
-
 bool SetNewPitchLimit(void* id, char* str, void* usrdata) {
     return (((Multistage2026_MFD*)usrdata)->InputNewPitchLimit(str));
 }
-
 bool NewRefVessel(void* id, char* str, void* usrdata) {
     return (((Multistage2026_MFD*)usrdata)->InputNewRefVessel(str));
 }
@@ -96,14 +80,13 @@ bool NewRefVessel(void* id, char* str, void* usrdata) {
 // ==============================================================
 // MFD class implementation
 
-// Constructor
 Multistage2026_MFD::Multistage2026_MFD(DWORD w, DWORD h, VESSEL* vessel)
     : MFD2(w, h, vessel)
 {
     smallfont = oapiCreateFont(h / 21, FALSE, const_cast<char*>("Courier"), FONT_NORMAL);
     verysmallfont = oapiCreateFont(h / 42, FALSE, const_cast<char*>("Courier"), FONT_NORMAL);
     smallquarterfont = oapiCreateFont(h / 24, FALSE, const_cast<char*>("Courier"), FONT_NORMAL);
-    
+
     mygreen = oapiCreateBrush(0x00FF00);
     mydarkgreen = oapiCreateBrush(0x336633);
     mydarkblue = oapiCreateBrush(0x800000);
@@ -151,27 +134,22 @@ Multistage2026_MFD::Multistage2026_MFD(DWORD w, DWORD h, VESSEL* vessel)
 
     if (ValidVessel()) {
         CurrentView = V_INIT;
-    }
-    else {
+    } else {
         CurrentView = V_NOCLASS;
     }
-
     outerVessel = FALSE;
 }
 
-// Destructor
 Multistage2026_MFD::~Multistage2026_MFD()
 {
     oapiReleaseFont(smallfont);
     oapiReleaseFont(verysmallfont);
     oapiReleaseFont(smallquarterfont);
-    
     oapiReleaseBrush(mygreen);
     oapiReleaseBrush(mydarkgreen);
     oapiReleaseBrush(myyellow);
     oapiReleaseBrush(mydarkred);
     oapiReleaseBrush(myblack);
-
     oapiReleasePen(pengreen);
     oapiReleasePen(pengreenstrong);
     oapiReleasePen(penwhite);
@@ -199,22 +177,18 @@ Multistage2026_MFD::~Multistage2026_MFD()
 
 bool Multistage2026_MFD::ValidVessel()
 {
-    if (!outerVessel)
-        Hvessel = oapiGetFocusObject();
-    else
-        Hvessel = oapiGetVesselByName(NewRefVesselName);
+    if (!outerVessel) Hvessel = oapiGetFocusObject();
+    else Hvessel = oapiGetVesselByName(NewRefVesselName);
 
     VESSEL* v = oapiGetVesselInterface(Hvessel);
     if (!v) return false;
 
-    // Version check (keeping original logic but relaxing strictness if needed)
     if (v->Version() < 2) {
         CurrentView = V_NOCLASS;
         return false;
     }
 
-    // Handshake with the vessel class
-    // NOTE: Ensure Multistage2026::clbkGeneric handles code 2015/2026
+    // Handshake
     int test = ((VESSEL3*)v)->clbkGeneric(2015, 2015, 0);
     if (test != 2015) {
         CurrentView = V_NOCLASS;
@@ -226,7 +200,6 @@ bool Multistage2026_MFD::ValidVessel()
         CurrentView = V_NOCLASS;
         return false;
     }
-
     return true;
 }
 
@@ -256,7 +229,7 @@ void Multistage2026_MFD::ToggleViewData(int data)
 char* Multistage2026_MFD::ButtonLabel(int bt)
 {
     switch (CurrentView) {
-    case V_INIT: {
+    case V_INIT:
         if (!outerVessel) {
             static const char* label[10] = { "FST","VEH","GNC","PLD","CTRL","MNT","ALT","PMC","PLM","COM" };
             return (bt < 10 ? const_cast<char*>(label[bt]) : 0);
@@ -264,7 +237,6 @@ char* Multistage2026_MFD::ButtonLabel(int bt)
             static const char* label[12] = { "FST","VEH","GNC","PLD","CTRL","MNT","ALT","PMC","PLM","COM",0,"RST" };
             return (bt < 12 ? const_cast<char*>(label[bt]) : 0);
         }
-    }
     case V_PAYLOAD: {
         static const char* label[8] = { "FST","VEH","GNC","PLD","CTRL","MNT","FAI","JET" };
         return (bt < 8 ? const_cast<char*>(label[bt]) : 0);
@@ -301,9 +273,7 @@ int Multistage2026_MFD::ButtonMenu(const MFDBUTTONMENU** menu) const
         {"Flight Settings", 0, 0}, {"Fuel Display", 0, 0}, {"Guidance Display", 0, 0},
         {"Payload Display", 0, 0}, {"Control Display", 0, 0}, {"Performance Monitor", 0, 0}
     };
-    // ... (Menus are standard structs, no changes needed except reuse)
-    // To save space, using existing logic structure:
-    
+
     if (menu) {
         if (CurrentView == V_INIT) {
             static const MFDBUTTONMENU initmnu[10] = {
@@ -323,7 +293,7 @@ int Multistage2026_MFD::ButtonMenu(const MFDBUTTONMENU** menu) const
             else { *menu = initmnuOV; return 12; }
         }
         else if (CurrentView == V_CTRL) {
-             static const MFDBUTTONMENU ctrmnu[10] = {
+            static const MFDBUTTONMENU ctrmnu[10] = {
                 {"Flight Settings", 0, 0}, {"Fuel Display", 0, 0}, {"Guidance Display", 0, 0},
                 {"Payload Display", 0, 0}, {"Control Display", 0, 0}, {"Performance Monitor", 0, 0},
                 {"Toggle Attitude", "Control", 0}, {"Toggle Pitch", "Control", 0},
@@ -381,6 +351,7 @@ int Multistage2026_MFD::ButtonMenu(const MFDBUTTONMENU** menu) const
 bool Multistage2026_MFD::ConsumeButton(int bt, int event)
 {
     if (!(event & PANEL_MOUSE_LBDOWN)) return false;
+
     if ((bt < 6) && (CurrentView != V_NOCLASS)) {
         CurrentView = bt;
         InvalidateButtons();
@@ -431,8 +402,7 @@ bool Multistage2026_MFD::ConsumeButton(int bt, int event)
             else if (bt == 11) Ms->WriteTelemetryFile(0);
             break;
         case V_PAYLOAD:
-            if (bt == 6) { /* Jettison Fairing Logic via key simulation removed for direct calls? */ }
-            else if (bt == 7) { /* Jettison Logic */ }
+            // Placeholder for jettison logic
             break;
         case V_NOCLASS:
             if (bt == 0) oapiOpenInputBox(const_cast<char*>("New Reference Vessel"), NewRefVessel, 0, 35, (void*)this);
@@ -466,13 +436,11 @@ void Multistage2026_MFD::UpdateTlmValues()
 
 oapi::IVECTOR2 Multistage2026_MFD::ScalePoints(oapi::IVECTOR2 input[], double xscale, double yscale, int uptopoint, int MinY)
 {
-    // Note: The original returned *input, which is weird (returns first element cast to IVECTOR2?).
-    // We modify in place.
     for (int i = 0; i < uptopoint; i++) {
         input[i].x = (int)(input[i].x / xscale);
         input[i].y = (int)(-(input[i].y - MinY) / yscale);
     }
-    return *input; // Legacy return
+    return *input;
 }
 
 bool Multistage2026_MFD::Update(oapi::Sketchpad* skp)
@@ -494,11 +462,13 @@ bool Multistage2026_MFD::Update(oapi::Sketchpad* skp)
         len = snprintf(buff, sizeof(buff), "This Vessel is not a Multistage2026");
         skp->Text(W / 2, H / 2, buff, len);
         break;
-        
+
     case V_INIT:
+    {
         if (!outerVessel) {
             Title(skp, "Multistage2026 MFD - MENU");
-        } else {
+        }
+        else {
             len = snprintf(outTitle, sizeof(outTitle), "MS26-MENU RefVessel:%s", NewRefVesselName);
             skp->SetTextColor(0x00FF00);
             skp->Text(margin, 0, outTitle, len);
@@ -508,33 +478,817 @@ bool Multistage2026_MFD::Update(oapi::Sketchpad* skp)
         skp->SetPen(penwhite);
         skp->Line(0, line + 3, W, line + 3);
         skp->SetPen(NULL);
-        
+
         len = snprintf(buff, sizeof(buff), "Welcome to the Multistage2026 MFD");
         skp->Text(middleW, 2 * line + 3, buff, len);
-        
-        // ... (Skipping full redraw logic for brevity, but patterns are:
-        // sprintf_s -> snprintf(buff, sizeof(buff), ...)
-        // See V_VEHICLE example below for complex logic fix)
-        
+
         skp->SetTextAlign(oapi::Sketchpad::LEFT, oapi::Sketchpad::BOTTOM);
         skp->SetTextColor(0x9c9c9c);
         len = snprintf(buff, sizeof(buff), "Vehicle Information:");
         skp->Text(margin, line * 4, buff, len);
-        
+
         if (Ms) {
-             len = snprintf(buff, sizeof(buff), "Name:%s", Ms->GetName());
-             skp->Text(margin, line * 5, buff, len);
-             // ... other stats
+            len = snprintf(buff, sizeof(buff), "Name:%s", Ms->GetName());
+            skp->Text(margin, line * 5, buff, len);
+            len = snprintf(buff, sizeof(buff), "Current Mass: %.0f kg", Ms->GetMass());
+            skp->Text(margin, line * 6, buff, len);
+            len = snprintf(buff, sizeof(buff), "N. of stages: %i", Ms->nStages);
+            skp->Text(margin, line * 7, buff, len);
+            len = snprintf(buff, sizeof(buff), "N. of boosters: %i", Ms->nBoosters);
+            skp->Text(margin, line * 8, buff, len);
+            len = snprintf(buff, sizeof(buff), "N. of payloads: %i", Ms->nPayloads);
+            skp->Text(margin, line * 9, buff, len);
+
+            double PLtotWeight = 0;
+            for (int i = 0; i < Ms->nPayloads; i++) {
+                PLtotWeight += Ms->payload[i].mass;
+            }
+
+            len = snprintf(buff, sizeof(buff), "Total Payload Mass: %.0f kg", PLtotWeight);
+            skp->Text(margin, line * 10, buff, len);
+
+            len = snprintf(buff, sizeof(buff), "Alt Steps: %.0f,%.0f,%.0f,%.0f m", Ms->altsteps[0], Ms->altsteps[1], Ms->altsteps[2], Ms->altsteps[3]);
+            skp->Text(margin, line * 11, buff, len);
+            len = snprintf(buff, sizeof(buff), "Grav Turn Calc Init Pitch:%.2f deg", Ms->GT_IP_Calculated * DEG);
+            skp->Text(margin, line * 12, buff, len);
+
+            len = snprintf(buff, sizeof(buff), "PEG Major Cycle Interval:%.1f s", Ms->PegMajorCycleInterval);
+            skp->Text(margin, line * 13, buff, len);
+            len = snprintf(buff, sizeof(buff), "PEG Pitch Limit: %.1f deg", Ms->PegPitchLimit * DEG);
+            skp->Text(margin, line * 14, buff, len);
+
+            if (Ms->Complex) len = snprintf(buff, sizeof(buff), "Complex Flight Active");
+            else len = snprintf(buff, sizeof(buff), "Complex Flight Not Active");
+            skp->Text(margin, line * 15, buff, len);
+        }
+
+        skp->SetPen(penwhite);
+        skp->Rectangle(margin * 0.5, line * 3 - 5, W - margin * 0.5, line * 15 + 5);
+        break;
+    }
+
+    case V_VEHICLE:
+    {
+        if (!outerVessel) {
+            skp->SetTextColor(0x00FFFF);
+            Title(skp, "Multistage2026 MFD - FUEL DISPLAY");
+        }
+        else {
+            len = snprintf(outTitle, sizeof(outTitle), "MS26-FUEL RefVessel:%s", NewRefVesselName);
+            skp->SetTextColor(0x00FF00);
+            skp->Text(margin, 0, outTitle, len);
+            skp->SetTextColor(0xFFFFFF);
+        }
+
+        skp->SetTextAlign(oapi::Sketchpad::LEFT, oapi::Sketchpad::BOTTOM);
+        len = snprintf(buff, sizeof(buff), "Boosters:");
+        skp->Text(margin, line * 2 + 5, buff, len);
+        len = snprintf(buff, sizeof(buff), "Stages:");
+        skp->Text(margin, line * (11), buff, len);
+
+        len = snprintf(buff, sizeof(buff), "AAAAAAAAA");
+        DWORD ltw = skp->GetTextWidth(buff, len) + 3;
+
+        if (Ms) {
+            for (int i = Ms->currentBooster; i < Ms->nBoosters; i++)
+            {
+                skp->SetBrush(NULL);
+                double fl = Ms->GetPropellantMass(Ms->booster[i].tank) / Ms->GetPropellantMaxMass(Ms->booster[i].tank);
+                VECTOR3 Rbt = Ms->hms(Ms->BoosterRemBurnTime(i, 1));
+                len = snprintf(buff, sizeof(buff), "Grp%i:%.0f%%", i + 1, fl * 100);
+                skp->Text(margin, line * (i + 3) + 5, buff, len);
+                len = snprintf(buff, sizeof(buff), "%02.0f:%02.0f", Rbt.y, Rbt.z);
+                DWORD rtw = skp->GetTextWidth(buff, len) + 3;
+                skp->Text(W - margin - rtw, line * (i + 3) + 5, buff, len);
+
+                skp->SetBrush(mydarkgreen);
+                skp->SetPen(NULL);
+                skp->Rectangle(margin + ltw, line * (i + 2) + 7, (int)(fl * (W - 2 * margin - rtw - ltw - 3) + margin + ltw), line * (i + 3) + 3);
+                skp->SetBrush(NULL);
+            }
+
+            for (int i = Ms->currentStage; i < Ms->nStages; i++)
+            {
+                skp->SetBrush(NULL);
+                double fl = Ms->GetPropellantMass(Ms->stage[i].tank) / Ms->GetPropellantMaxMass(Ms->stage[i].tank);
+                VECTOR3 Rbt = Ms->hms(Ms->RemBurnTime(i, 1));
+                len = snprintf(buff, sizeof(buff), "Stg%i:%.0f%%", i + 1, fl * 100);
+                skp->Text(margin, line * (i + 12), buff, len);
+                len = snprintf(buff, sizeof(buff), "%02.0f:%02.0f", Rbt.y, Rbt.z);
+                DWORD rtw = skp->GetTextWidth(buff, len) + 3;
+                skp->Text(W - margin - rtw, line * (i + 12), buff, len);
+
+                skp->SetPen(NULL);
+                skp->SetBrush(mydarkblue);
+                skp->Rectangle(margin + ltw, line * (i + 11) + 2, (int)(fl * (W - 2 * margin - rtw - ltw - 3) + margin + ltw), line * (i + 12) - 2);
+                skp->SetBrush(NULL);
+                skp->SetPen(penwhite);
+            }
+
+            skp->Line(0, middleH - 5, W, middleH - 5);
+            skp->Line(0, line + 3, W, line + 3);
+            skp->Line(0, 19 * line - 5, W, 19 * line - 5);
+            skp->SetPen(NULL);
+
+            VECTOR3 met = Ms->hms(Ms->MET);
+            if (Ms->MET >= 0) len = snprintf(buff, sizeof(buff), "MET: %03.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+            else len = snprintf(buff, sizeof(buff), "T-: %03.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+            skp->Text(margin, line * 20, buff, len);
+
+            if (Ms->APstat) len = snprintf(buff, sizeof(buff), "AP: ON");
+            else len = snprintf(buff, sizeof(buff), "AP: OFF");
+            skp->Text(W - margin - skp->GetTextWidth(buff, len), line * 20, buff, len);
         }
         break;
+    }
 
-    // ... Other views follow exact same pattern ...
-    // ... Key fix is replacing sprintf_s with snprintf ...
+    case V_THRUST:
+    {
+        if (!outerVessel) {
+            Title(skp, "Multistage2026 MFD - THRUST DISPLAY");
+        }
+        else {
+            len = snprintf(outTitle, sizeof(outTitle), "MS26-THRUST RefVessel:%s", NewRefVesselName);
+            skp->SetTextColor(0x00FF00);
+            skp->Text(margin, 0, outTitle, len);
+            skp->SetTextColor(0xFFFFFF);
+        }
+        skp->SetTextAlign(oapi::Sketchpad::LEFT, oapi::Sketchpad::BOTTOM);
+
+        if (Ms) {
+            VECTOR3 met = Ms->hms(Ms->MET);
+            if (Ms->MET >= 0) len = snprintf(buff, sizeof(buff), "MET: %03.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+            else len = snprintf(buff, sizeof(buff), "T-: %03.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+            skp->Text(margin, line * 20, buff, len);
+
+            if (Ms->APstat) len = snprintf(buff, sizeof(buff), "AP: ON");
+            else len = snprintf(buff, sizeof(buff), "AP: OFF");
+            skp->Text(W - margin - skp->GetTextWidth(buff, len), line * 20, buff, len);
+
+            len = snprintf(buff, sizeof(buff), "Stage: %i", Ms->currentStage + 1);
+            skp->Text(margin, line * 3, buff, len);
+
+            len = snprintf(buff, sizeof(buff), "Booster: %i", Ms->currentBooster + 1);
+            skp->Text(margin, line * 11, buff, len);
+
+            skp->SetPen(penwhite);
+            skp->Line(0, line + 3, W, line + 3);
+            skp->Line(0, 19 * line - 5, W, 19 * line - 5);
+            skp->SetPen(NULL);
+
+            len = snprintf(buff, sizeof(buff), "Eng 1:");
+            DWORD lm = skp->GetTextWidth(buff, len);
+
+            for (int i = 0; i < Ms->stage[Ms->currentStage].nEngines; i++)
+            {
+                skp->SetFont(smallfont);
+                double Thrust, Throttle, Performance;
+                Throttle = Ms->GetThrusterLevel(Ms->stage[Ms->currentStage].th_main_h[i]);
+                Thrust = (Ms->GetThrusterMax0(Ms->stage[Ms->currentStage].th_main_h[i]) * Throttle);
+
+                double denom = ((Ms->stage[Ms->currentStage].thrust / Ms->stage[Ms->currentStage].nEngines) * Throttle);
+                if (denom > 0.001) Performance = Thrust / denom;
+                else Performance = 0;
+
+                skp->SetBrush(NULL);
+                skp->SetPen(penwhite);
+                skp->Rectangle(lm + 2, line * (i + 3), W - margin, line * (i + 4));
+                skp->SetPen(NULL);
+                skp->SetBrush(mydarkred);
+                skp->Rectangle(lm + 4, line * (i + 3) + 1, (int)((W - margin - lm - 6) * Throttle + lm + 4), line * (i + 4) - 1);
+                skp->SetPen(NULL);
+                skp->SetBrush(NULL);
+
+                len = snprintf(buff, sizeof(buff), "Eng%i  Th: %.2f MN Tle:%.0f%% Prm:%.0f%%", i + 1, Thrust / 1000000, Throttle * 100, Performance * 100);
+                skp->Text(margin + 3, line * (i + 4), buff, len);
+            }
+
+            for (int q = 0; q < Ms->booster[Ms->currentBooster].N; q++)
+            {
+                skp->SetFont(smallfont);
+                double Thrust, Throttle, Performance;
+                Throttle = Ms->GetThrusterLevel(Ms->booster[Ms->currentBooster].th_booster_h[q]);
+                Thrust = (Ms->GetThrusterMax0(Ms->booster[Ms->currentBooster].th_booster_h[q]) * Throttle);
+
+                double denom = ((Ms->booster[Ms->currentBooster].thrust) * Throttle);
+                if (denom > 0.001) Performance = Thrust / denom;
+                else Performance = 0;
+
+                skp->SetBrush(NULL);
+                skp->SetPen(penwhite);
+                skp->Rectangle(lm + 2, line * (q + 11), W - margin, line * (q + 12));
+                skp->SetPen(NULL);
+                skp->SetBrush(mydarkred);
+                skp->Rectangle(lm + 4, line * (q + 11) + 1, (int)((W - margin - lm - 6) * Throttle + lm + 4), line * (q + 12) - 1);
+                skp->SetPen(NULL);
+                skp->SetBrush(NULL);
+
+                len = snprintf(buff, sizeof(buff), "Eng%i  Th: %.2f MN Tle:%.0f%% Prm:%.0f%%", q + 1, Thrust / 1000000, Throttle * 100, Performance * 100);
+                skp->Text(margin + 3, line * (q + 12), buff, len);
+            }
+        }
+        break;
+    }
+
+    case V_BATTS:
+    {
+        if (!outerVessel) {
+            Title(skp, "Multistage2026 MFD - BATTS DISPLAY");
+        }
+        else {
+            len = snprintf(outTitle, sizeof(outTitle), "MS26-BATTS RefVessel:%s", NewRefVesselName);
+            skp->SetTextColor(0x00FF00);
+            skp->Text(margin, 0, outTitle, len);
+            skp->SetTextColor(0xFFFFFF);
+        }
+        skp->SetTextAlign(oapi::Sketchpad::LEFT, oapi::Sketchpad::BOTTOM);
+
+        if (Ms) {
+            VECTOR3 met = Ms->hms(Ms->MET);
+            if (Ms->MET >= 0) len = snprintf(buff, sizeof(buff), "MET: %03.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+            else len = snprintf(buff, sizeof(buff), "T-: %03.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+            skp->Text(margin, line * 20, buff, len);
+
+            if (Ms->APstat) len = snprintf(buff, sizeof(buff), "AP: ON");
+            else len = snprintf(buff, sizeof(buff), "AP: OFF");
+            skp->Text(W - margin - skp->GetTextWidth(buff, len), line * 20, buff, len);
+            skp->SetPen(NULL);
+
+            len = snprintf(buff, sizeof(buff), "AAAAAAAAA");
+            DWORD ltw = skp->GetTextWidth(buff, len) + 3;
+
+            for (int i = Ms->currentStage; i < Ms->nStages; i++)
+            {
+                skp->SetBrush(NULL);
+                double bl = 0;
+                if (Ms->stage[i].batteries.MaxCharge > 0)
+                    bl = Ms->stage[i].batteries.CurrentCharge / Ms->stage[i].batteries.MaxCharge;
+
+                VECTOR3 Rbat = Ms->hms(Ms->stage[i].batteries.CurrentCharge); 
+                len = snprintf(buff, sizeof(buff), "Stg%i:%.0f%%", i + 1, bl * 100);
+                skp->Text(margin, line * (i + 3), buff, len);
+                len = snprintf(buff, sizeof(buff), "%03.0f:%02.0f:%02.0f", Rbat.x, Rbat.y, Rbat.z);
+                DWORD rtw = skp->GetTextWidth(buff, len) + 3;
+                skp->Text(W - margin - rtw, line * (i + 3), buff, len);
+
+                skp->SetPen(NULL);
+                skp->SetBrush(myyellow);
+                skp->Rectangle(margin + ltw, line * (i + 2) + 2, (int)(bl * (W - 2 * margin - rtw - ltw - 3) + margin + ltw), line * (i + 3) - 2);
+                skp->SetBrush(NULL);
+                skp->SetPen(penwhite);
+            }
+            skp->Line(0, line + 3, W, line + 3);
+            skp->Line(0, 19 * line - 5, W, 19 * line - 5);
+        }
+        break;
+    }
+
+    case V_GUIDANCE:
+    {
+        if (!outerVessel) {
+            Title(skp, "Multistage2026 MFD- GUIDANCE DISPLAY");
+        }
+        else {
+            len = snprintf(outTitle, sizeof(outTitle), "MS26-GNC RefVessel:%s", NewRefVesselName);
+            skp->SetTextColor(0x00FF00);
+            skp->Text(margin, 0, outTitle, len);
+            skp->SetTextColor(0xFFFFFF);
+        }
+
+        if (Ms) {
+            VECTOR3 met = Ms->hms(Ms->MET);
+            if (Ms->MET >= 0) len = snprintf(buff, sizeof(buff), "MET: %03.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+            else len = snprintf(buff, sizeof(buff), "T-: %03.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+
+            skp->SetTextAlign(oapi::Sketchpad::LEFT, oapi::Sketchpad::BOTTOM);
+            skp->Text(margin, line * 20, buff, len);
+            if (Ms->APstat) len = snprintf(buff, sizeof(buff), "AP: ON");
+            else len = snprintf(buff, sizeof(buff), "AP: OFF");
+            skp->Text(W - margin - skp->GetTextWidth(buff, len), line * 20, buff, len);
+            skp->SetBrush(NULL);
+            skp->SetPen(penwhite);
+            skp->Line(0, line + 3, W, line + 3);
+            skp->Line(0, 19 * line - 5, W, 19 * line - 5);
+            skp->SetPen(NULL);
+            len = snprintf(buff, sizeof(buff), "MET  Comand  params");
+            skp->Text(margin, line * 3, buff, len);
+            skp->SetPen(pengraydotted);
+            skp->Line(0, line * 3, W, line * 3);
+            skp->SetPen(NULL);
+
+            for (int i = 1; i <= Ms->nsteps; i++)
+            {
+                skp->SetFont(smallfont);
+                if ((Ms->MET > Ms->Gnc_step[i].time) && (!Ms->Gnc_step[i].executed)) skp->SetTextColor(0xFFFFFF);
+                else skp->SetTextColor(0x9c9c9c);
+                if (Ms->Gnc_step[i].executed) skp->SetTextColor(0x333333);
+                if (SelectedStep == i) skp->SetTextColor(0x00FFFF);
+
+                if ((Ms->Gnc_step[i].time < 0) && (Ms->Gnc_step[i].GNC_Comand != CM_NOLINE))
+                {
+                    VECTOR3 tmr = Ms->hms(Ms->Gnc_step[i].time + 1);
+                    len = snprintf(buff, sizeof(buff), "-%02.0f:%02.0f %s %.1f %.1f %.1f %.1f %.1f %.1f", tmr.y, tmr.z, Ms->Gnc_step[i].Comand, Ms->Gnc_step[i].trval1, Ms->Gnc_step[i].trval2, Ms->Gnc_step[i].trval3, Ms->Gnc_step[i].trval4, Ms->Gnc_step[i].trval5, Ms->Gnc_step[i].trval6);
+                }
+                else if (Ms->Gnc_step[i].time > 0) {
+                    VECTOR3 tmr = Ms->hms(Ms->Gnc_step[i].time);
+                    len = snprintf(buff, sizeof(buff), "%02.0f:%02.0f %s %.1f %.1f %.1f %.1f %.1f %.1f", tmr.y, tmr.z, Ms->Gnc_step[i].Comand, Ms->Gnc_step[i].trval1, Ms->Gnc_step[i].trval2, Ms->Gnc_step[i].trval3, Ms->Gnc_step[i].trval4, Ms->Gnc_step[i].trval5, Ms->Gnc_step[i].trval6);
+                }
+                else {
+                    VECTOR3 tmr = _V(0, 0, 0);
+                    len = snprintf(buff, sizeof(buff), "%02.0f:%02.0f %s %.1f %.1f %.1f %.1f %.1f %.1f", tmr.y, tmr.z, Ms->Gnc_step[i].Comand, Ms->Gnc_step[i].trval1, Ms->Gnc_step[i].trval2, Ms->Gnc_step[i].trval3, Ms->Gnc_step[i].trval4, Ms->Gnc_step[i].trval5, Ms->Gnc_step[i].trval6);
+                }
+                skp->Text(3, line * (i + 4) + 5, buff, len);
+            }
+        }
+        break;
+    }
+
+    case V_CTRL:
+    {
+        if (!outerVessel) {
+            Title(skp, "Multistage2026 MFD - CONTROL DISPLAY");
+        }
+        else {
+            len = snprintf(outTitle, sizeof(outTitle), "MS26-CTRL RefVessel:%s", NewRefVesselName);
+            skp->SetTextColor(0x00FF00);
+            skp->Text(margin, 0, outTitle, len);
+            skp->SetTextColor(0xFFFFFF);
+        }
+
+        if (Ms) {
+            VECTOR3 met = Ms->hms(Ms->MET);
+            if (Ms->MET >= 0) len = snprintf(buff, sizeof(buff), "MET: %03.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+            else len = snprintf(buff, sizeof(buff), "T-: %03.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+
+            skp->SetTextAlign(oapi::Sketchpad::LEFT, oapi::Sketchpad::BOTTOM);
+            skp->Text(margin, line * 20, buff, len);
+            if (Ms->APstat) len = snprintf(buff, sizeof(buff), "AP: ON");
+            else len = snprintf(buff, sizeof(buff), "AP: OFF");
+            skp->Text(W - margin - skp->GetTextWidth(buff, len), line * 20, buff, len);
+            skp->SetBrush(NULL);
+            skp->SetPen(penwhite);
+            skp->Line(0, line + 3, W, line + 3);
+            skp->Line(0, 19 * line - 5, W, 19 * line - 5);
+            skp->SetPen(NULL);
+
+            VECTOR3 rotlvl;
+            Ms->GetAttitudeRotLevel(rotlvl);
+            if (rotlvl.x != 0) {
+                if (rotlvl.x > 0) {
+                    skp->SetPen(pengray);
+                    skp->SetBrush(mydarkgreen);
+                    skp->Rectangle(W * 0.25, middleH - (int)(rotlvl.x * 0.5 * middleH), W * 0.75, middleH);
+                    skp->SetPen(NULL); skp->SetBrush(NULL);
+                }
+                else {
+                    skp->SetPen(pengray);
+                    skp->SetBrush(mydarkgreen);
+                    skp->Rectangle(W * 0.25, middleH, W * 0.75, middleH - (int)(rotlvl.x * 0.5 * middleH));
+                    skp->SetPen(NULL); skp->SetBrush(NULL);
+                }
+            }
+
+            if (rotlvl.y != 0) {
+                if (rotlvl.y > 0) {
+                    skp->SetPen(pengray);
+                    skp->SetBrush(mydarkblue);
+                    skp->Rectangle(middleW - (int)(rotlvl.y * 0.5 * middleW), H * 0.25, middleW, H * 0.75);
+                    skp->SetPen(NULL); skp->SetBrush(NULL);
+                }
+                else {
+                    skp->SetPen(pengray);
+                    skp->SetBrush(mydarkblue);
+                    skp->Rectangle(middleW, H * 0.25, middleW - (int)(rotlvl.y * 0.5 * middleW), H * 0.75);
+                    skp->SetPen(NULL); skp->SetBrush(NULL);
+                }
+            }
+
+            if (rotlvl.z != 0) {
+                if (rotlvl.z > 0) {
+                    skp->SetPen(pengray);
+                    skp->SetBrush(mydarkred);
+                    skp->Rectangle(middleW, H * 0.25, middleW + (int)(rotlvl.z * 0.5 * middleW), middleH);
+                    skp->Rectangle(middleW - (int)(rotlvl.z * 0.5 * middleW), middleH, middleW, H * 0.75);
+                    skp->SetPen(NULL); skp->SetBrush(NULL);
+                }
+                else {
+                    skp->SetPen(pengray);
+                    skp->SetBrush(mydarkred);
+                    skp->Rectangle(middleW + (int)(rotlvl.z * 0.5 * middleW), H * 0.25, middleW, middleH);
+                    skp->Rectangle(middleW, middleH, middleW - (int)(rotlvl.z * 0.5 * middleW), H * 0.75);
+                    skp->SetPen(NULL); skp->SetBrush(NULL);
+                }
+            }
+
+            skp->SetPen(penwhite);
+            skp->Rectangle(margin, 2 * line, W - margin, 18 * line);
+            skp->SetPen(NULL);
+
+            skp->SetPen(pengraydotted);
+            skp->Line(margin + 1, middleH, W - margin - 1, middleH);
+            skp->Line(middleW, 2 * line + 1, middleW, 18 * line - 1);
+            skp->Line((int)(0.25 * W), (int)(0.25 * H), (int)(0.75 * W), (int)(0.25 * H));
+            skp->Line((int)(0.75 * W), (int)(0.25 * H), (int)(0.75 * W), (int)(0.75 * H));
+            skp->Line((int)(0.25 * W), (int)(0.75 * H), (int)(0.75 * W), (int)(0.75 * H));
+            skp->Line((int)(0.25 * W), (int)(0.25 * H), (int)(0.25 * W), (int)(0.75 * H));
+
+            int cnv = H / 90;
+            double desiredHeading = Ms->GetProperHeading();
+            if (desiredHeading < 0) desiredHeading += 2 * PI;
+            if (Ms->APstat)
+            {
+                skp->SetPen(pengreenstrong);
+                int deltaPitch = (int)((Ms->GetPitch() - Ms->TgtPitch) * DEG * cnv) + middleH;
+                int deltaHeading = (int)((-Ms->GetHeading() + desiredHeading) * DEG * cnv) + middleW;
+                skp->Line(deltaHeading - 15, deltaPitch, deltaHeading + 15, deltaPitch);
+                skp->Line(deltaHeading, deltaPitch - 15, deltaHeading, deltaPitch + 15);
+                skp->SetPen(NULL);
+            }
+
+            skp->SetTextColor(0xC4C5C5);
+            len = snprintf(buff, sizeof(buff), "Pitch");
+            skp->Text(margin + 5, 7 * line, buff, len);
+            len = snprintf(buff, sizeof(buff), "Target:%.1f", Ms->TgtPitch * DEG);
+            skp->Text(margin + 5, 8 * line, buff, len);
+            len = snprintf(buff, sizeof(buff), "Delta:%.1f", (Ms->GetPitch() - Ms->TgtPitch) * DEG);
+            skp->Text(margin + 5, 9 * line, buff, len);
+            len = snprintf(buff, sizeof(buff), "Heading");
+            skp->Text(margin + 5, 12 * line, buff, len);
+            len = snprintf(buff, sizeof(buff), "Target:%.0f", desiredHeading * DEG);
+            skp->Text(margin + 5, 13 * line, buff, len);
+            len = snprintf(buff, sizeof(buff), "Delta:%.0f", (desiredHeading - Ms->GetHeading()) * DEG);
+            skp->Text(margin + 5, 14 * line, buff, len);
+
+            if ((Ms->runningPeg) && (Ms->GetAltitude() > Ms->altsteps[3]) && (Ms->currentStage == Ms->NN - 1))
+            {
+                VECTOR3 PMECO = Ms->hms(Ms->TMeco);
+                len = snprintf(buff, sizeof(buff), "Predicted MECO: %02.0f:%02.0f", PMECO.y, PMECO.z);
+                skp->SetTextColor(0x00FFFF);
+                skp->Text(margin + 10, 16 * line, buff, len);
+                skp->SetTextColor(0xFFFFFF);
+            }
+
+            if (Ms->AttCtrl) len = snprintf(buff, sizeof(buff), "Att Ctrl ON");
+            else len = snprintf(buff, sizeof(buff), "Att Ctrl OFF");
+            skp->Text(W - margin - 5 - skp->GetTextWidth(buff, len), line * 7, buff, len);
+
+            if (!Ms->PitchCtrl) {
+                len = snprintf(buff, sizeof(buff), "Pitch Ctrl OFF");
+                skp->Text(W - margin - 5 - skp->GetTextWidth(buff, len), line * 8, buff, len);
+            }
+            if (!Ms->YawCtrl) {
+                len = snprintf(buff, sizeof(buff), "Yaw Ctrl OFF");
+                skp->Text(W - margin - 5 - skp->GetTextWidth(buff, len), line * 9, buff, len);
+            }
+            if (!Ms->RollCtrl) {
+                len = snprintf(buff, sizeof(buff), "Roll Ctrl OFF");
+                skp->Text(W - margin - 5 - skp->GetTextWidth(buff, len), line * 10, buff, len);
+            }
+        }
+        break;
+    }
+
+    case V_PAYLOAD:
+    {
+        if (!outerVessel) {
+            Title(skp, "Multistage2026 MFD - PAYLOAD DISPLAY");
+        }
+        else {
+            len = snprintf(outTitle, sizeof(outTitle), "MS26-PLD RefVessel:%s", NewRefVesselName);
+            skp->SetTextColor(0x00FF00);
+            skp->Text(margin, 0, outTitle, len);
+            skp->SetTextColor(0xFFFFFF);
+        }
+
+        if (Ms) {
+            VECTOR3 met = Ms->hms(Ms->MET);
+            if (Ms->MET >= 0) len = snprintf(buff, sizeof(buff), "MET: %03.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+            else len = snprintf(buff, sizeof(buff), "T-: %03.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+
+            skp->SetTextAlign(oapi::Sketchpad::LEFT, oapi::Sketchpad::BOTTOM);
+            skp->Text(margin, line * 20, buff, len);
+            if (Ms->APstat) len = snprintf(buff, sizeof(buff), "AP: ON");
+            else len = snprintf(buff, sizeof(buff), "AP: OFF");
+            skp->Text(W - margin - skp->GetTextWidth(buff, len), line * 20, buff, len);
+            skp->SetPen(penwhite);
+            skp->Line(0, line + 3, W, line + 3);
+            skp->Line(0, 19 * line - 5, W, 19 * line - 5);
+            skp->SetPen(NULL);
+
+            for (int i = Ms->currentPayload; i < Ms->nPayloads; i++) {
+                skp->SetFont(smallfont);
+                len = snprintf(buff, sizeof(buff), "Pld %i - %s - Mass:%.0fkg", i + 1, Ms->payload[i].name, Ms->payload[i].mass);
+                skp->Text(margin, line * (i + 4), buff, len);
+            }
+        }
+        break;
+    }
+
+    case V_MONITOR:
+    {
+        if (Ms) UpdateTlmValues();
+        skp->SetFont(smallfont);
+
+        len = snprintf(buff, sizeof(buff), "Alt");
+        skp->SetPen(pengreen);
+        if (SelectedTlm == 1) skp->SetTextColor(0x00FFFF);
+        else {
+            if (ViewData[VIEWDATA_ALT]) {
+                skp->SetTextColor(0xFFFFFF);
+                skp->Rectangle(W - 2 * margin, line * 3, W - 2 * margin + skp->GetTextWidth(buff, len), line * 4);
+            }
+            else skp->SetTextColor(0x333333);
+        }
+        skp->Text(W - 2 * margin, line * 3, buff, len);
+
+        skp->SetPen(penpurple);
+        len = snprintf(buff, sizeof(buff), "Spd");
+        if (SelectedTlm == 2) skp->SetTextColor(0x00FFFF);
+        else {
+            if (ViewData[VIEWDATA_SPEED]) {
+                skp->SetTextColor(0xFFFFFF);
+                skp->Rectangle(W - 2 * margin, line * 4, W - 2 * margin + skp->GetTextWidth(buff, len), line * 5);
+            }
+            else skp->SetTextColor(0x333333);
+        }
+        skp->Text(W - 2 * margin, line * 4, buff, len);
+
+        skp->SetPen(penred);
+        len = snprintf(buff, sizeof(buff), "Ptc");
+        if (SelectedTlm == 3) skp->SetTextColor(0x00FFFF);
+        else {
+            if (ViewData[VIEWDATA_PITCH]) {
+                skp->SetTextColor(0xFFFFFF);
+                skp->Rectangle(W - 2 * margin, line * 5, W - 2 * margin + skp->GetTextWidth(buff, len), line * 6);
+            }
+            else skp->SetTextColor(0x333333);
+        }
+        skp->Text(W - 2 * margin, line * 5, buff, len);
+
+        skp->SetPen(penblue);
+        len = snprintf(buff, sizeof(buff), "Thr");
+        if (SelectedTlm == 4) skp->SetTextColor(0x00FFFF);
+        else {
+            if (ViewData[VIEWDATA_THRUST]) {
+                skp->SetTextColor(0xFFFFFF);
+                skp->Rectangle(W - 2 * margin, line * 6, W - 2 * margin + skp->GetTextWidth(buff, len), line * 7);
+            }
+            else skp->SetTextColor(0x333333);
+        }
+        skp->Text(W - 2 * margin, line * 6, buff, len);
+
+        skp->SetPen(pencyan);
+        len = snprintf(buff, sizeof(buff), "Vvt");
+        if (SelectedTlm == 5) skp->SetTextColor(0x00FFFF);
+        else {
+            if (ViewData[VIEWDATA_VV]) {
+                skp->SetTextColor(0xFFFFFF);
+                skp->Rectangle(W - 2 * margin, line * 7, W - 2 * margin + skp->GetTextWidth(buff, len), line * 8);
+            }
+            else skp->SetTextColor(0x333333);
+        }
+        skp->Text(W - 2 * margin, line * 7, buff, len);
+
+        skp->SetPen(penyellow);
+        len = snprintf(buff, sizeof(buff), "Acc");
+        if (SelectedTlm == 6) skp->SetTextColor(0x00FFFF);
+        else {
+            if (ViewData[VIEWDATA_ACC]) {
+                skp->SetTextColor(0xFFFFFF);
+                skp->Rectangle(W - 2 * margin, line * 8, W - 2 * margin + skp->GetTextWidth(buff, len), line * 9);
+            }
+            else skp->SetTextColor(0x333333);
+        }
+        skp->Text(W - 2 * margin, line * 8, buff, len);
+
+        int y0 = line + 6;
+        int y1 = 19 * line - 8;
+        int hh = y1 - y0;
+
+        skp->SetBrush(NULL);
+        int nlines = 5;
+        skp->SetPen(pengraydotted);
+        for (int i = 1; i < nlines; i++)
+        {
+            skp->Line(0, y0 + hh / nlines * i, W, y0 + hh / nlines * i);
+            skp->Line(W / nlines * i, y0, W / nlines * i, y1);
+        }
+
+        if (Ms) {
+            double MetStep = Ms->MET / 600;
+            skp->SetOrigin(-(int)(MetStep * W), y1);
+            double cnvy;
+            double cnvx = 600 / (double)W;
+
+            // ALTITUDE
+            if (ViewData[VIEWDATA_ALT]) {
+                double maxY1 = ArrayMax(RefMFDtlmAlt, Ms->loadedtlmlines);
+                double maxY2 = ArrayMax(MFDtlmAlt, Ms->tlmidx);
+                double maxY = (maxY1 > maxY2) ? maxY1 : maxY2;
+                maxY = (maxY > 0) ? maxY * 1.05 : maxY * 0.95;
+
+                double minY1 = ArrayMin(RefMFDtlmAlt, Ms->loadedtlmlines);
+                double minY2 = ArrayMin(MFDtlmAlt, Ms->tlmidx);
+                double minY = (minY1 < minY2) ? minY1 : minY2;
+                minY = (minY < 0) ? minY * 1.05 : minY * 0.95;
+
+                if (!AutoRange[VIEWDATA_ALT]) {
+                    maxY = RangeMax[VIEWDATA_ALT];
+                    minY = RangeMin[VIEWDATA_ALT];
+                }
+
+                cnvy = (maxY - minY) / (double)hh;
+                skp->SetPen(pendarkgreen);
+                ScalePoints(RefMFDtlmAlt, cnvx, cnvy, Ms->loadedtlmlines, (int)minY);
+                skp->Polyline(RefMFDtlmAlt, Ms->loadedtlmlines);
+
+                skp->SetPen(pengreenstrong);
+                ScalePoints(MFDtlmAlt, cnvx, cnvy, Ms->tlmidx, (int)minY);
+                skp->Polyline(MFDtlmAlt, Ms->tlmidx);
+            }
+
+            // SPEED
+            if (ViewData[VIEWDATA_SPEED]) {
+                double maxY1 = ArrayMax(RefMFDtlmSpeed, Ms->loadedtlmlines);
+                double maxY2 = ArrayMax(MFDtlmSpeed, Ms->tlmidx);
+                double maxY = (maxY1 > maxY2) ? maxY1 : maxY2;
+                maxY = (maxY > 0) ? maxY * 1.05 : maxY * 0.95;
+
+                double minY1 = ArrayMin(RefMFDtlmSpeed, Ms->loadedtlmlines);
+                double minY2 = ArrayMin(MFDtlmSpeed, Ms->tlmidx);
+                double minY = (minY1 < minY2) ? minY1 : minY2;
+                minY = (minY < 0) ? minY * 1.05 : minY * 0.95;
+
+                if (!AutoRange[VIEWDATA_SPEED]) {
+                    maxY = RangeMax[VIEWDATA_SPEED] * 10;
+                    minY = RangeMin[VIEWDATA_SPEED] * 10;
+                }
+
+                cnvy = (maxY - minY) / (double)hh;
+                skp->SetPen(pendarkpurple);
+                ScalePoints(RefMFDtlmSpeed, cnvx, cnvy, Ms->loadedtlmlines, (int)minY);
+                skp->Polyline(RefMFDtlmSpeed, Ms->loadedtlmlines);
+
+                skp->SetPen(penpurplestrong);
+                ScalePoints(MFDtlmSpeed, cnvx, cnvy, Ms->tlmidx, (int)minY);
+                skp->Polyline(MFDtlmSpeed, Ms->tlmidx);
+            }
+
+            // PITCH
+            if (ViewData[VIEWDATA_PITCH]) {
+                double maxY1 = ArrayMax(RefMFDtlmPitch, Ms->loadedtlmlines);
+                double maxY2 = ArrayMax(MFDtlmPitch, Ms->tlmidx);
+                double maxY = (maxY1 > maxY2) ? maxY1 : maxY2;
+                maxY = (maxY > 0) ? maxY * 1.05 : maxY * 0.95;
+
+                double minY1 = ArrayMin(RefMFDtlmPitch, Ms->loadedtlmlines);
+                double minY2 = ArrayMin(MFDtlmPitch, Ms->tlmidx);
+                double minY = (minY1 < minY2) ? minY1 : minY2;
+                minY = (minY < 0) ? minY * 1.05 : minY * 0.95;
+
+                if (!AutoRange[VIEWDATA_PITCH])
+                {
+                    maxY = RangeMax[VIEWDATA_PITCH] * 100;
+                    minY = RangeMin[VIEWDATA_PITCH] * 100;
+                }
+
+                cnvy = (maxY - minY) / (double)hh;
+
+                skp->SetPen(pendarkred);
+                ScalePoints(RefMFDtlmPitch, cnvx, cnvy, Ms->loadedtlmlines, (int)minY);
+                skp->Polyline(RefMFDtlmPitch, Ms->loadedtlmlines);
+
+                skp->SetPen(penredstrong);
+                ScalePoints(MFDtlmPitch, cnvx, cnvy, Ms->tlmidx, (int)minY);
+                skp->Polyline(MFDtlmPitch, Ms->tlmidx);
+            }
+
+            // VERTICAL VELOCITY (VV)
+            if (ViewData[VIEWDATA_VV]) {
+                double maxY1 = ArrayMax(RefMFDtlmVv, Ms->loadedtlmlines);
+                double maxY2 = ArrayMax(MFDtlmVv, Ms->tlmidx);
+                double maxY = (maxY1 > maxY2) ? maxY1 : maxY2;
+                maxY = (maxY > 0) ? maxY * 1.05 : maxY * 0.95;
+
+                double minY1 = ArrayMin(RefMFDtlmVv, Ms->loadedtlmlines);
+                double minY2 = ArrayMin(MFDtlmVv, Ms->tlmidx);
+                double minY = (minY1 < minY2) ? minY1 : minY2;
+                minY = (minY < 0) ? minY * 1.05 : minY * 0.95;
+
+                if (!AutoRange[VIEWDATA_VV])
+                {
+                    maxY = RangeMax[VIEWDATA_VV] * 10;
+                    minY = RangeMin[VIEWDATA_VV] * 10;
+                }
+
+                cnvy = (maxY - minY) / (double)hh;
+
+                skp->SetPen(pendarkcyan);
+                ScalePoints(RefMFDtlmVv, cnvx, cnvy, Ms->loadedtlmlines, (int)minY);
+                skp->Polyline(RefMFDtlmVv, Ms->loadedtlmlines);
+
+                skp->SetPen(pencyanstrong);
+                ScalePoints(MFDtlmVv, cnvx, cnvy, Ms->tlmidx, (int)minY);
+                skp->Polyline(MFDtlmVv, Ms->tlmidx);
+            }
+
+            // THRUST
+            if (ViewData[VIEWDATA_THRUST]) {
+                double maxY1 = ArrayMax(RefMFDtlmThrust, Ms->loadedtlmlines);
+                double maxY2 = ArrayMax(MFDtlmThrust, Ms->tlmidx);
+                double maxY = (maxY1 > maxY2) ? maxY1 : maxY2;
+                maxY = (maxY > 0) ? maxY * 1.05 : maxY * 0.95;
+
+                double minY1 = ArrayMin(RefMFDtlmThrust, Ms->loadedtlmlines);
+                double minY2 = ArrayMin(MFDtlmThrust, Ms->tlmidx);
+                double minY = (minY1 < minY2) ? minY1 : minY2;
+                minY = (minY < 0) ? minY * 1.05 : minY * 0.95;
+
+                if (!AutoRange[VIEWDATA_THRUST])
+                {
+                    maxY = RangeMax[VIEWDATA_THRUST];
+                    minY = RangeMin[VIEWDATA_THRUST];
+                }
+
+                cnvy = (maxY - minY) / (double)hh;
+
+                skp->SetPen(pendarkblue);
+                ScalePoints(RefMFDtlmThrust, cnvx, cnvy, Ms->loadedtlmlines, (int)minY);
+                skp->Polyline(RefMFDtlmThrust, Ms->loadedtlmlines);
+
+                skp->SetPen(penbluestrong);
+                ScalePoints(MFDtlmThrust, cnvx, cnvy, Ms->tlmidx, (int)minY);
+                skp->Polyline(MFDtlmThrust, Ms->tlmidx);
+            }
+
+            // ACCELERATION
+            if (ViewData[VIEWDATA_ACC]) {
+                double maxY1 = ArrayMax(RefMFDtlmAcc, Ms->loadedtlmlines);
+                double maxY2 = ArrayMax(MFDtlmAcc, Ms->tlmidx);
+                double maxY = (maxY1 > maxY2) ? maxY1 : maxY2;
+                maxY = (maxY > 0) ? maxY * 1.05 : maxY * 0.95;
+
+                double minY1 = ArrayMin(RefMFDtlmAcc, Ms->loadedtlmlines);
+                double minY2 = ArrayMin(MFDtlmAcc, Ms->tlmidx);
+                double minY = (minY1 < minY2) ? minY1 : minY2;
+                minY = (minY < 0) ? minY * 1.05 : minY * 0.95;
+
+
+                if (!AutoRange[VIEWDATA_ACC])
+                {
+                    maxY = RangeMax[VIEWDATA_ACC] * 100;
+                    minY = RangeMin[VIEWDATA_ACC] * 100;
+                }
+
+                cnvy = (maxY - minY) / (double)hh;
+
+                skp->SetPen(pendarkyellow);
+                ScalePoints(RefMFDtlmAcc, cnvx, cnvy, Ms->loadedtlmlines, (int)minY);
+                skp->Polyline(RefMFDtlmAcc, Ms->loadedtlmlines);
+
+                skp->SetPen(penyellowstrong);
+                ScalePoints(MFDtlmAcc, cnvx, cnvy, Ms->tlmidx, (int)minY);
+                skp->Polyline(MFDtlmAcc, Ms->tlmidx);
+            }
+        }
+
+        skp->SetOrigin(0, 0);
+        skp->SetPen(NULL);
+        skp->SetBrush(myblack);
+        skp->Rectangle(0, 19 * line - 5, W, H);
+        skp->Rectangle(0, 0, W, line + 3);
+        skp->SetBrush(NULL);
+
+        if (!outerVessel) {
+            Title(skp, "Multistage2026 MFD - MONITOR DISPLAY");
+        }
+        else {
+            len = snprintf(outTitle, sizeof(outTitle), "MS26-MNT RefVessel:%s", NewRefVesselName);
+            skp->SetTextColor(0x00FF00);
+            skp->Text(margin, 0, outTitle, len);
+            skp->SetTextColor(0xFFFFFF);
+        }
+
+        if (Ms) {
+            VECTOR3 met = Ms->hms(Ms->MET);
+            if (Ms->MET >= 0) len = snprintf(buff, sizeof(buff), "MET: %03.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+            else len = snprintf(buff, sizeof(buff), "T-: %03.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+            skp->SetTextAlign(oapi::Sketchpad::LEFT, oapi::Sketchpad::BOTTOM);
+            skp->Text(margin, line * 20, buff, len);
+            if (Ms->APstat) len = snprintf(buff, sizeof(buff), "AP: ON");
+            else len = snprintf(buff, sizeof(buff), "AP: OFF");
+            skp->Text(W - margin - skp->GetTextWidth(buff, len), line * 20, buff, len);
+            skp->SetPen(penwhite);
+            skp->Line(0, line + 3, W, line + 3);
+            skp->Line(0, 19 * line - 5, W, 19 * line - 5);
+            skp->SetPen(NULL);
+        }
+        break;
+    }
     }
     return true;
 }
 
-// MFD message parser
 OAPI_MSGTYPE Multistage2026_MFD::MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam)
 {
     switch (msg) {
@@ -544,19 +1298,67 @@ OAPI_MSGTYPE Multistage2026_MFD::MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPAR
     return 0;
 }
 
-// ... Callback implementations ...
-
 bool Multistage2026_MFD::AddStep(char* str) {
-    Ms->VinkaAddStep(str);
-    memset(str, '\0', strlen(str)); // Safe clear
+    if(Ms) Ms->VinkaAddStep(str);
+    memset(str, '\0', strlen(str));
     return TRUE;
 }
 
-// ... Rest of callbacks unchanged except for class name ...
+bool Multistage2026_MFD::MFDSetRange(char* str) {
+    if (str[0] == 'a' || str[0] == 'A') {
+        AutoRange[SelectedTlm - 1] = TRUE;
+        return true;
+    } else {
+        sscanf(str, "%lf,%lf", &RangeMin[SelectedTlm - 1], &RangeMax[SelectedTlm - 1]);
+        AutoRange[SelectedTlm - 1] = FALSE;
+        return true;
+    }
+}
+
+bool Multistage2026_MFD::MFDLoadTlmFile(char* str) {
+    if(Ms) Ms->parseTelemetryFile(str);
+    return TRUE;
+}
+
+bool Multistage2026_MFD::InputPMCInterval(char* str) {
+    double newint;
+    sscanf(str, "%lf", &newint);
+    if(Ms) Ms->SetPegMajorCycleInterval(newint);
+    return TRUE;
+}
+
+bool Multistage2026_MFD::InputAltSteps(char* str) {
+    double newsteps[4];
+    sscanf(str, "%lf,%lf,%lf,%lf", &newsteps[0], &newsteps[1], &newsteps[2], &newsteps[3]);
+    if(Ms) Ms->SetNewAltSteps(newsteps[0], newsteps[1], newsteps[2], newsteps[3]);
+    return TRUE;
+}
+
+bool Multistage2026_MFD::InputNewPitchLimit(char* str) {
+    double newpitchlimit;
+    sscanf(str, "%lf", &newpitchlimit);
+    if(Ms) Ms->SetPegPitchLimit(newpitchlimit * RAD);
+    return TRUE;
+}
+
+bool Multistage2026_MFD::InputNewRefVessel(char* str) {
+    snprintf(NewRefVesselName, sizeof(NewRefVesselName), "%s", str);
+    if (oapiIsVessel(oapiGetVesselByName(NewRefVesselName))) {
+        outerVessel = TRUE;
+        if (ValidVessel()) {
+            CurrentView = V_INIT;
+            InvalidateButtons();
+            return TRUE;
+        } else {
+            outerVessel = FALSE;
+            return FALSE;
+        }
+    }
+    return FALSE;
+}
 
 void Multistage2026_MFD::StoreStatus(void) const {}
 void Multistage2026_MFD::RecallStatus(void) {}
 
-// Global callback (Optional: Can remove if handled by main DLL)
-// DLLCLBK void opcFocusChanged(OBJHANDLE New, OBJHANDLE Old) {}
+
 
