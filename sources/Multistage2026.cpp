@@ -45,6 +45,7 @@
 #include <algorithm>
 #include "Orbitersdk.h"
 #include "Multistage2026.h"
+#include "Multistage2026_MFD.h"
 
 // ==============================================================
 // Creation & Destruction
@@ -3383,12 +3384,31 @@ int Multistage2026::clbkGeneric(int msgid, int prm, void* context) {
 // Module Init
 // ==============================================================
 
-DLLCLBK void InitModule(HINSTANCE hModule) {
-    // No GDI init needed for Linux
+DLLCLBK void InitModule(HINSTANCE hModule)
+{
+    // Register the Vessel Class
+    VESSEL_CLASS_SPEC vcs;
+    vcs.name = "Multistage2026";
+    vcs.desc = "General Purpose Multistage Launch Vehicle (2026 Port)";
+    vcs.data = NULL;
+    vcs.flag = 0;
+
+    // Register the vessel
+    g_VesselClass = oapiRegisterVesselClass(vcs); // Assuming g_VesselClass is defined globally
+
+    // Register the MFD
+    Multistage2026_MFD::InitMFD(hModule);
 }
-DLLCLBK void ExitModule(HINSTANCE hModule) {
-    // No Dialog close needed for Linux
+
+DLLCLBK void ExitModule(HINSTANCE hModule)
+{
+    // Unregister MFD
+    Multistage2026_MFD::ExitMFD(hModule);
+
+    // Unregister Vessel
+    oapiUnregisterVesselClass(g_VesselClass);
 }
+
 DLLCLBK VESSEL* ovcInit(OBJHANDLE hvessel, int flightmodel) { return new Multistage2026(hvessel, flightmodel); }
 DLLCLBK void ovcExit(VESSEL* vessel) { if (vessel) delete (Multistage2026*)vessel; }
 
