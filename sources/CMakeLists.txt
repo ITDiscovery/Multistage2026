@@ -30,12 +30,12 @@ set_target_properties(Multistage2026 PROPERTIES
 # Installation Logic
 # ==============================================================================
 
-# Define where Orbiter lives (You can override this with cmake -DORBITER_ROOT=...)
+# Define Orbiter Root
 if(NOT DEFINED ORBITER_ROOT)
     set(ORBITER_ROOT "/usr/local/Orbiter")
 endif()
 
-# 1. Custom Command: Backup existing module before install
+# 1. Backup existing module
 install(CODE "
     set(TARGET_FILE \"${ORBITER_ROOT}/Modules/libMultistage2026.so\")
     if(EXISTS \"\${TARGET_FILE}\")
@@ -44,8 +44,16 @@ install(CODE "
     endif()
 ")
 
-# 2. Install the new binary
+# 2. Install AND Rename
+# We install the target, but we use RENAME to change it from Multistage2026.so to libMultistage2026.so
 install(TARGETS Multistage2026
     LIBRARY DESTINATION "${ORBITER_ROOT}/Modules"
+    NAMELINK_SKIP
 )
 
+# 3. Explicit Rename (CMake's install RENAME feature is sometimes tricky with targets, 
+# so we use a post-install hook to guarantee the name change)
+install(CODE "
+    message(STATUS \"Renaming installed file to libMultistage2026.so\")
+    file(RENAME \"${ORBITER_ROOT}/Modules/Multistage2026.so\" \"${ORBITER_ROOT}/Modules/libMultistage2026.so\")
+")

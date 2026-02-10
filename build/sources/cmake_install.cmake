@@ -42,3 +42,44 @@ if(NOT DEFINED CMAKE_OBJDUMP)
   set(CMAKE_OBJDUMP "/usr/bin/objdump")
 endif()
 
+if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+  
+    set(TARGET_FILE "/usr/local/Orbiter/Modules/libMultistage2026.so")
+    if(EXISTS "${TARGET_FILE}")
+        message(STATUS "Backing up existing module to ${TARGET_FILE}.bak")
+        file(RENAME "${TARGET_FILE}" "${TARGET_FILE}.bak")
+    endif()
+
+endif()
+
+if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+  if(EXISTS "$ENV{DESTDIR}/usr/local/Orbiter/Modules/Multistage2026.so" AND
+     NOT IS_SYMLINK "$ENV{DESTDIR}/usr/local/Orbiter/Modules/Multistage2026.so")
+    file(RPATH_CHECK
+         FILE "$ENV{DESTDIR}/usr/local/Orbiter/Modules/Multistage2026.so"
+         RPATH "")
+  endif()
+  list(APPEND CMAKE_ABSOLUTE_DESTINATION_FILES
+   "/usr/local/Orbiter/Modules/Multistage2026.so")
+  if(CMAKE_WARN_ON_ABSOLUTE_INSTALL_DESTINATION)
+    message(WARNING "ABSOLUTE path INSTALL DESTINATION : ${CMAKE_ABSOLUTE_DESTINATION_FILES}")
+  endif()
+  if(CMAKE_ERROR_ON_ABSOLUTE_INSTALL_DESTINATION)
+    message(FATAL_ERROR "ABSOLUTE path INSTALL DESTINATION forbidden (by caller): ${CMAKE_ABSOLUTE_DESTINATION_FILES}")
+  endif()
+  file(INSTALL DESTINATION "/usr/local/Orbiter/Modules" TYPE SHARED_LIBRARY FILES "/home/peter/Multistage2026/Modules/Multistage2026.so")
+  if(EXISTS "$ENV{DESTDIR}/usr/local/Orbiter/Modules/Multistage2026.so" AND
+     NOT IS_SYMLINK "$ENV{DESTDIR}/usr/local/Orbiter/Modules/Multistage2026.so")
+    if(CMAKE_INSTALL_DO_STRIP)
+      execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}/usr/local/Orbiter/Modules/Multistage2026.so")
+    endif()
+  endif()
+endif()
+
+if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+  
+    message(STATUS "Renaming installed file to libMultistage2026.so")
+    file(RENAME "/usr/local/Orbiter/Modules/Multistage2026.so" "/usr/local/Orbiter/Modules/libMultistage2026.so")
+
+endif()
+

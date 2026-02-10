@@ -824,19 +824,19 @@ void Multistage2026::parseTelemetryFile(char* name)
         fclose(fVal);
         loadedtlmlines = i;
         wReftlm = true;
-        sprintf(oapiDebugString(), "Telemetry Loaded: %d lines", i);
+        oapiWriteLogV((char*)"Telemetry Loaded: %d lines", i);
     } else {
         wReftlm = false;
-        sprintf(oapiDebugString(), "Telemetry File Not Found: %s", name);
+        oapiWriteLogV((char*)"[ERROR] Telemetry File Not Found: %s", name);
     }
 }
 
-void Multistage2026::parseGuidanceFile(char* filename)
+void Multistage2026::parseGuidanceFile(char* name)
 {
-    FILE* fVal = fopen(filename, "r");
+    FILE* fVal = fopen(name, "r");
     if (fVal == NULL) {
         char path[256];
-        sprintf(path, "Config/%s", filename);
+        sprintf(path, "Config/%s", name);
         fVal = fopen(path, "r");
     }
 
@@ -889,9 +889,10 @@ void Multistage2026::parseGuidanceFile(char* filename)
         fclose(fVal);
         nsteps = i - 1;
         stepsloaded = true;
+        oapiWriteLogV((char*)"Guidance File Read: %d lines", i);
     } else {
         stepsloaded = false;
-        // Optionally log error
+        oapiWriteLogV((char*)"[ERROR] Guidance File Not Found: %s", name);
     }
 }
 

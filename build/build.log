@@ -1,8 +1,0 @@
-[ 57%] Building CXX object sources/CMakeFiles/Multistage2026.dir/Guidance.cpp.o
-[ 57%] Building CXX object sources/CMakeFiles/Multistage2026.dir/parser.cpp.o
-[ 28%] Building CXX object sources/CMakeFiles/Multistage2026.dir/Multistage2026.cpp.o
-[ 28%] Building CXX object sources/CMakeFiles/Multistage2026.dir/Multistage2026_MFD.cpp.o
-[ 71%] Building CXX object sources/CMakeFiles/Multistage2026.dir/Particles.cpp.o
-[ 85%] Building CXX object sources/CMakeFiles/Multistage2026.dir/peg.cpp.o
-[100%] Linking CXX shared library /home/peter/Multistage2026/Modules/Multistage2026.so
-[100%] Built target Multistage2026

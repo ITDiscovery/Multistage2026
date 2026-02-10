@@ -62,7 +62,6 @@ Multistage2026::Multistage2026(OBJHANDLE hObj, int fmodel) :VESSEL3(hObj, fmodel
     DeveloperMode = false;
     HangarMode = false;
     GetCurrentDirectory(MAXLEN, OrbiterRoot);
-
     nStages = 0;
     nBoosters = 0;
     nInterstages = 0;
@@ -90,6 +89,18 @@ Multistage2026::Multistage2026(OBJHANDLE hObj, int fmodel) :VESSEL3(hObj, fmodel
     yerror = 0.0;
     rerror = 0.0;
 
+   // Resize vectors so they actually have slots 0 through 9
+    stage.resize(10);
+    booster.resize(10);
+    payload.resize(10);
+    Particle.resize(20);
+
+    // NEW: Initialize them to prevent GetProperPS from reading garbage
+    for (unsigned int i = 0; i < Particle.size(); i++) {
+        Particle[i].ParticleName[0] = '\0'; // Empty string
+        // Initialize other members if necessary, but name is critical for lookups
+    }
+
     for (unsigned int i = 0; i < 10; i++) {
         stage.at(i) = STAGE();
         stage.at(i).Ignited = false;
@@ -103,6 +114,11 @@ Multistage2026::Multistage2026(OBJHANDLE hObj, int fmodel) :VESSEL3(hObj, fmodel
         stage.at(i).defpitch = false;
         stage.at(i).defroll = false;
         stage.at(i).defyaw = false;
+        stage.at(i).wps1 = false;
+        stage.at(i).wps2 = false;
+        stage.at(i).eng_tex[0] = '\0';
+        stage.at(i).eng_pstream1 = '\0';
+        stage.at(i).eng_pstream2 = '\0';
         payload[i] = PAYLOAD();
     }
 
@@ -667,62 +683,96 @@ PSTREAM_HANDLE Multistage2026::AddExhaustStreamGrowing(THRUSTER_HANDLE  th, cons
     return psh;
 }
 
-void Multistage2026::CreateMainThruster() {
-    if (stage.at(currentStage).nEngines == 0) {
-        stage.at(currentStage).nEngines = 1;
-        stage.at(currentStage).eng[0] = _V(0, 0, -stage.at(currentStage).height * 0.5);
-    }
-
-    if ((stage.at(currentStage).ispref >= 0) && (stage.at(currentStage).pref == 0)) {
-        stage.at(currentStage).pref = 101400.0;
-    }
-
-    if (Misc.thrustrealpos) {
-        for (int i = 0; i < stage.at(currentStage).nEngines; i++) {
-            stage.at(currentStage).th_main_h.at(i) = CreateThruster(stage.at(currentStage).off, stage.at(currentStage).eng_dir, stage.at(currentStage).thrust / stage.at(currentStage).nEngines, stage.at(currentStage).tank, stage.at(currentStage).isp, stage.at(currentStage).ispref, stage.at(currentStage).pref);
-        }
-    } else {
-        for (int i = 0; i < stage.at(currentStage).nEngines; i++) {
-            stage.at(currentStage).th_main_h.at(i) = CreateThruster(_V(0, 0, 0), _V(0, 0, 1), stage.at(currentStage).thrust / stage.at(currentStage).nEngines, stage.at(currentStage).tank, stage.at(currentStage).isp, stage.at(currentStage).ispref, stage.at(currentStage).pref);
-        }
-    }
-
-    thg_h_main = CreateThrusterGroup(stage.at(currentStage).th_main_h.data(), stage.at(currentStage).nEngines, THGROUP_MAIN);
-    SetDefaultPropellantResource(stage.at(currentStage).tank);
-
-    for (int i = 0; i < stage.at(currentStage).nEngines; i++) {
-        AddExhaust(stage.at(currentStage).th_main_h.at(i), 10 * stage.at(currentStage).eng_diameter * stage.at(currentStage).engV4[i].t, stage.at(currentStage).eng_diameter * stage.at(currentStage).engV4[i].t, stage.at(currentStage).eng[i], operator*(stage.at(currentStage).eng_dir, -1), GetProperExhaustTexture((char*)stage.at(currentStage).eng_tex.data()));
-
-        if (!stage.at(currentStage).ParticlesPacked) {
-            if (stage.at(currentStage).wps1) {
-                PARTICLESTREAMSPEC Pss1 = GetProperPS((char*)stage.at(currentStage).eng_pstream1.data()).Pss;
-                AddExhaustStreamGrowing(stage.at(currentStage).th_main_h.at(i), stage.at(currentStage).eng[i], &Pss1, GetProperPS((char*)stage.at(currentStage).eng_pstream1.data()).Growing, GetProperPS((char*)stage.at(currentStage).eng_pstream1.data()).GrowFactor_size, GetProperPS((char*)stage.at(currentStage).eng_pstream1.data()).GrowFactor_rate, TRUE, false, currentStage, i);
-                snprintf(logbuff, sizeof(logbuff), "%s: Stage n.%i Engine Exhaust Stream Added: %s to engine n.%i", GetName(), currentStage + 1, stage.at(currentStage).eng_pstream1.c_str(), i + 1);
-                oapiWriteLog(logbuff);
-            }
-            if (stage.at(currentStage).wps2) {
-                PARTICLESTREAMSPEC Pss2 = GetProperPS((char*)stage.at(currentStage).eng_pstream2.data()).Pss;
-                AddExhaustStreamGrowing(stage.at(currentStage).th_main_h.at(i), stage.at(currentStage).eng[i], &Pss2, GetProperPS((char*)stage.at(currentStage).eng_pstream2.data()).Growing, GetProperPS((char*)stage.at(currentStage).eng_pstream2.data()).GrowFactor_size, GetProperPS((char*)stage.at(currentStage).eng_pstream2.data()).GrowFactor_rate, TRUE, false, currentStage, i);
-                snprintf(logbuff, sizeof(logbuff), "%s: Stage n.%i Engine Exhaust Stream Added: %s to engine n.%i", GetName(), currentStage + 1, stage.at(currentStage).eng_pstream2.c_str(), i + 1);
-                oapiWriteLog(logbuff);
-            }
-        }
-        snprintf(logbuff, sizeof(logbuff), "%s: Stage n. %i Engines Exhaust Added--> number of engines: %i , diameter: %.3f, position x: %.3f y: %.3f z: %.3f", GetName(), currentStage + 1, stage.at(currentStage).nEngines, stage.at(currentStage).eng_diameter * stage.at(currentStage).engV4[i].t, stage.at(currentStage).eng[i].x, stage.at(currentStage).eng[i].y, stage.at(currentStage).eng[i].z);
-        oapiWriteLog(logbuff);
-    }
-
-    if (stage.at(currentStage).DenyIgnition) {
-        for (int i = 0; i < stage.at(currentStage).nEngines; i++) SetThrusterResource(stage.at(currentStage).th_main_h.at(i), NULL);
-    }
-
-    LightEmitter* le = AddPointLight(stage.at(currentStage).eng[0], 200, 1e-3, 0, 2e-3, col_d, col_s, col_a);
-    le->SetIntensityRef(&th_main_level);
-}
-
 // ==============================================================
 // Thruster Creation
 // ==============================================================
+void Multistage2026::CreateMainThruster()
+{
+    if (currentStage >= stage.size()) return;
 
+    STAGE& S = stage.at(currentStage);
+    char logbuff[512]; 
+
+    // 1. Handle 0 Engines Edge Case
+    if (S.nEngines == 0) {
+        S.nEngines = 1;
+        S.eng[0] = _V(0, 0, -S.height / 2.0);
+    }
+
+    // Default Pressure check
+    if ((S.ispref >= 0) && (S.pref == 0.0)) {
+        S.pref = 101400.0;
+    }
+
+    // 2. Resize Thruster Handle Vector
+    if (S.th_main_h.size() < S.nEngines) {
+        S.th_main_h.resize(S.nEngines);
+    }
+
+    // 3. Create Thrusters
+    // FIXED: Added _V(0,0,1) as the 2nd argument (Thrust Direction)
+    if (Misc.thrustrealpos) {
+        for (int i = 0; i < S.nEngines; i++) {
+            S.th_main_h.at(i) = CreateThruster(S.eng[i], _V(0,0,1), S.thrust / S.nEngines, S.tank, S.isp, S.isp, S.pref);
+        }
+    } else {
+        for (int i = 0; i < S.nEngines; i++) {
+            S.th_main_h.at(i) = CreateThruster(_V(0, 0, 0), _V(0,0,1), S.thrust / S.nEngines, S.tank, S.isp, S.isp, S.pref);
+        }
+    }
+
+    // 4. Create Group
+    if (S.nEngines > 0) {
+        thg_h_main = CreateThrusterGroup(S.th_main_h.data(), S.nEngines, THGROUP_MAIN);
+    }
+
+    if (S.tank) SetDefaultPropellantResource(S.tank);
+
+    // 5. Add Exhausts
+    for (int i = 0; i < S.nEngines; i++) {
+        AddExhaust(S.th_main_h.at(i), 20.0, 1.0); 
+
+        if (!S.ParticlesPacked) {
+            // CHECK THE FLAG (Boolean)
+            if (S.wps1) {
+                // FIX: Convert std::string to (char*)
+                // We use (char*) cast because c_str() returns const char*, but GetProperPS wants char*
+                PARTICLE P1 = GetProperPS((char*)S.eng_pstream1.c_str());
+                
+                AddExhaustStreamGrowing(S.th_main_h.at(i), _V(0,0,0), &P1.Pss, true, 8.0, 1.0, false, false, currentStage, i);
+            }
+
+            // CHECK THE FLAG (Boolean)
+            if (S.wps2) {
+                // FIX: Convert std::string to (char*)
+                PARTICLE P2 = GetProperPS((char*)S.eng_pstream2.c_str());
+                
+                AddExhaustStreamGrowing(S.th_main_h.at(i), _V(0,0,0), &P2.Pss, true, 8.0, 1.0, false, false, currentStage, i);
+            }
+        }
+    }
+
+    // 6. Deny Ignition
+    if (S.DenyIgnition) {
+        for (int i = 0; i < S.nEngines; i++) SetThrusterResource(S.th_main_h.at(i), NULL);
+    }
+
+    // 7. Engine Light
+    // FIXED: Used COLOUR4 (R,G,B,A) and provided 3 colors (Diffuse, Specular, Ambient)
+    if (S.nEngines > 0) {
+        COLOUR4 col_w = {1.0, 1.0, 1.0, 0.0}; 
+        
+        // AddPointLight(Pos, Range, Att0, Att1, Att2, Diffuse, Specular, Ambient)
+        LightEmitter* le = AddPointLight(S.eng[0], 200, 1e-3, 0, 1e-3, col_w, col_w, col_w);
+        
+        th_main_level = 0.0; 
+        le->SetIntensityRef(&th_main_level);
+    }
+}
+
+// ==============================================================
+// Reaction Control System Creation
+// ==============================================================
 void Multistage2026::CreateRCS() {
     if (stage.at(currentStage).pitchthrust == 0) {
         stage.at(currentStage).pitchthrust = 0.25 * stage.at(currentStage).thrust * stage.at(currentStage).height; // Empirical Values
@@ -2483,6 +2533,7 @@ void Multistage2026::FLY(double simtime, double simdtime, double mjdate) {
 // ==============================================================
 
 void Multistage2026::clbkSetClassCaps(FILEHANDLE cfg) {
+
     // 1. Initialize Variables
     initGlobalVars();
 
