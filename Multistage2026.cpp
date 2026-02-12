@@ -43,9 +43,9 @@
 #include <stdio.h>
 #include <sstream>
 #include <algorithm>
+#include <stdarg.h>
 #include "Orbitersdk.h"
 #include "Multistage2026.h"
-#include "Multistage2026_MFD.h"
 
 const double mu = 398600.4418e9;
 
@@ -59,6 +59,7 @@ const double mu = 398600.4418e9;
 // ==============================================================
 
 Multistage2026::Multistage2026(OBJHANDLE hObj, int fmodel) :VESSEL3(hObj, fmodel) {
+    bVesselInitialized = false;
     DeveloperMode = false;
     HangarMode = false;
     GetCurrentDirectory(MAXLEN, OrbiterRoot);
@@ -101,6 +102,10 @@ Multistage2026::Multistage2026(OBJHANDLE hObj, int fmodel) :VESSEL3(hObj, fmodel
         // Initialize other members if necessary, but name is critical for lookups
     }
 
+    // -------------------------------------------------------------------------
+    // 1. Initialize STAGES
+    // -------------------------------------------------------------------------
+    currentStage = 0;
     for (unsigned int i = 0; i < 10; i++) {
         stage.at(i) = STAGE();
         stage.at(i).Ignited = false;
@@ -117,14 +122,30 @@ Multistage2026::Multistage2026(OBJHANDLE hObj, int fmodel) :VESSEL3(hObj, fmodel
         stage.at(i).wps1 = false;
         stage.at(i).wps2 = false;
         stage.at(i).eng_tex[0] = '\0';
-        stage.at(i).eng_pstream1 = '\0';
-        stage.at(i).eng_pstream2 = '\0';
+        stage.at(i).tank = NULL;
         payload[i] = PAYLOAD();
     }
 
-    for (unsigned int i = 0; i < 10; i++) {
-        booster.at(i) = BOOSTER();
+    // -------------------------------------------------------------------------
+    // 2. Initialize BOOSTERS
+    // -------------------------------------------------------------------------
+    // Resize to safe defaults
+    if (booster.size() < 10) booster.resize(10);
+
+    for (unsigned int i = 0; i < booster.size(); i++) {
+        booster.at(i) = BOOSTER(); // Reset to defaults
+        // Safety: Nullify Pointers
+        booster.at(i).tank = NULL;
+        // Boosters use a Fixed Array (std::array), so we .fill() it
+        booster.at(i).th_booster_h.fill(NULL);
+        // Safety: Clear Flags
         booster.at(i).Ignited = false;
+        booster.at(i).wps1 = false;
+        booster.at(i).wps2 = false;
+
+        // Safety: Empty Strings
+        booster.at(i).eng_pstream1 = "";
+        booster.at(i).eng_pstream2 = "";
         booster.at(i).ParticlesPacked = false;
         booster.at(i).ParticlesPackedToEngine = 0;
     }
@@ -368,6 +389,15 @@ MATRIX3 Multistage2026::RotationMatrix(VECTOR3 angles) {
     MATRIX3 RM_Y = _M(cos(angles.y), 0, sin(angles.y), 0, 1, 0, -sin(angles.y), 0, cos(angles.y));
     MATRIX3 RM_Z = _M(cos(angles.z), -sin(angles.z), 0, sin(angles.z), cos(angles.z), 0, 0, 0, 1);
     return mul(RM_Z, mul(RM_Y, RM_X));
+}
+
+void oapiWriteLogV(const char* format, ...) {
+    char va_buff[1024];
+    va_list va;
+    va_start(va, format);
+    vsnprintf(va_buff, sizeof(va_buff), format, va);
+    va_end(va);
+    oapiWriteLog((char*)va_buff);
 }
 
 // ==============================================================
@@ -662,10 +692,11 @@ void Multistage2026::initGlobalVars() {
 // These read the config data and actually tell Orbiter "Put an
 // engine here with this much power" and "Make smoke come out here."
 // ==============================================================
-
-
 PSTREAM_HANDLE Multistage2026::AddExhaustStreamGrowing(THRUSTER_HANDLE  th, const VECTOR3& pos, PARTICLESTREAMSPEC* pss, bool growing, double growfactor_size, double growfactor_rate, bool count, bool ToBooster, int N_Item, int N_Engine) {
     PSTREAM_HANDLE psh = AddExhaustStream(th, pos, pss);
+
+    oapiWriteLog((char*)"DEBUG: AddExhaust Stream!");
+
     psg[nPsg].pss = *pss;
     psg[nPsg].psh[2] = psh;
     psg[nPsg].th = th;
@@ -688,9 +719,11 @@ PSTREAM_HANDLE Multistage2026::AddExhaustStreamGrowing(THRUSTER_HANDLE  th, cons
 // ==============================================================
 void Multistage2026::CreateMainThruster()
 {
+    // Use stage.size() only if 'stage' is still a vector; 
+    // if you switched to a fixed array, use 'nStages'.
     if (currentStage >= stage.size()) return;
 
-    STAGE& S = stage.at(currentStage);
+    STAGE& S = stage[currentStage]; // Safe indexing
     char logbuff[512]; 
 
     // 1. Handle 0 Engines Edge Case
@@ -704,68 +737,71 @@ void Multistage2026::CreateMainThruster()
         S.pref = 101400.0;
     }
 
-    // 2. Resize Thruster Handle Vector
-    if (S.th_main_h.size() < S.nEngines) {
-        S.th_main_h.resize(S.nEngines);
-    }
+    // 2. Thruster Handle Vector Resize - REMOVED
+    // Fixed arrays like th_main_h[32] don't need resizing.
 
     // 3. Create Thrusters
-    // FIXED: Added _V(0,0,1) as the 2nd argument (Thrust Direction)
     if (Misc.thrustrealpos) {
         for (int i = 0; i < S.nEngines; i++) {
-            S.th_main_h.at(i) = CreateThruster(S.eng[i], _V(0,0,1), S.thrust / S.nEngines, S.tank, S.isp, S.isp, S.pref);
+            S.th_main_h[i] = CreateThruster(S.eng[i], _V(0,0,1), S.thrust / S.nEngines, S.tank, S.isp, S.isp, S.pref);
         }
     } else {
         for (int i = 0; i < S.nEngines; i++) {
-            S.th_main_h.at(i) = CreateThruster(_V(0, 0, 0), _V(0,0,1), S.thrust / S.nEngines, S.tank, S.isp, S.isp, S.pref);
+            S.th_main_h[i] = CreateThruster(_V(0, 0, 0), _V(0,0,1), S.thrust / S.nEngines, S.tank, S.isp, S.isp, S.pref);
         }
     }
 
     // 4. Create Group
     if (S.nEngines > 0) {
-        thg_h_main = CreateThrusterGroup(S.th_main_h.data(), S.nEngines, THGROUP_MAIN);
+        // Arrays decay to pointers, so S.th_main_h is equivalent to .data()
+        thg_h_main = CreateThrusterGroup(S.th_main_h, S.nEngines, THGROUP_MAIN);
     }
 
     if (S.tank) SetDefaultPropellantResource(S.tank);
 
     // 5. Add Exhausts
     for (int i = 0; i < S.nEngines; i++) {
-        AddExhaust(S.th_main_h.at(i), 20.0, 1.0); 
+        AddExhaust(S.th_main_h[i], 20.0, 1.0);
 
         if (!S.ParticlesPacked) {
-            // CHECK THE FLAG (Boolean)
+            char nameBuffer[256];
+
             if (S.wps1) {
-                // FIX: Convert std::string to (char*)
-                // We use (char*) cast because c_str() returns const char*, but GetProperPS wants char*
-                PARTICLE P1 = GetProperPS((char*)S.eng_pstream1.c_str());
-                
-                AddExhaustStreamGrowing(S.th_main_h.at(i), _V(0,0,0), &P1.Pss, true, 8.0, 1.0, false, false, currentStage, i);
+                // S.eng_pstream1 is now char[], so no .c_str()
+                strncpy(nameBuffer, S.eng_pstream1, 255);
+                nameBuffer[255] = '\0'; 
+
+                PARTICLE *P1 = new PARTICLE(); 
+                *P1 = GetProperPS(nameBuffer); 
+                // Using [i] and &P1->Pss
+                AddExhaustStreamGrowing(S.th_main_h[i], _V(0,0,0), &P1->Pss, true, 8.0, 1.0, false, false, currentStage, i);
             }
 
-            // CHECK THE FLAG (Boolean)
             if (S.wps2) {
-                // FIX: Convert std::string to (char*)
-                PARTICLE P2 = GetProperPS((char*)S.eng_pstream2.c_str());
-                
-                AddExhaustStreamGrowing(S.th_main_h.at(i), _V(0,0,0), &P2.Pss, true, 8.0, 1.0, false, false, currentStage, i);
+                strncpy(nameBuffer, S.eng_pstream2, 255);
+                nameBuffer[255] = '\0'; 
+
+                // Heap allocation (as we did for P1 to be safe)
+                PARTICLE *P2 = new PARTICLE();
+                *P2 = GetProperPS(nameBuffer);
+                AddExhaustStreamGrowing(S.th_main_h[i], _V(0,0,0), &P2->Pss, true, 8.0, 1.0, false, false, currentStage, i);
             }
         }
     }
 
     // 6. Deny Ignition
     if (S.DenyIgnition) {
-        for (int i = 0; i < S.nEngines; i++) SetThrusterResource(S.th_main_h.at(i), NULL);
+        for (int i = 0; i < S.nEngines; i++) {
+            SetThrusterResource(S.th_main_h[i], NULL);
+        }
     }
 
     // 7. Engine Light
-    // FIXED: Used COLOUR4 (R,G,B,A) and provided 3 colors (Diffuse, Specular, Ambient)
     if (S.nEngines > 0) {
-        COLOUR4 col_w = {1.0, 1.0, 1.0, 0.0}; 
-        
-        // AddPointLight(Pos, Range, Att0, Att1, Att2, Diffuse, Specular, Ambient)
+        COLOUR4 col_w = {1.0, 1.0, 1.0, 0.0};
         LightEmitter* le = AddPointLight(S.eng[0], 200, 1e-3, 0, 1e-3, col_w, col_w, col_w);
-        
-        th_main_level = 0.0; 
+
+        th_main_level = 0.0;
         le->SetIntensityRef(&th_main_level);
     }
 }
@@ -774,81 +810,87 @@ void Multistage2026::CreateMainThruster()
 // Reaction Control System Creation
 // ==============================================================
 void Multistage2026::CreateRCS() {
-    if (stage.at(currentStage).pitchthrust == 0) {
-        stage.at(currentStage).pitchthrust = 0.25 * stage.at(currentStage).thrust * stage.at(currentStage).height; // Empirical Values
+    // Reference to the current stage to keep code clean
+    STAGE &S = stage[currentStage];
+
+    // 1. Calculate default thrusts if not provided
+    if (S.pitchthrust == 0) {
+        S.pitchthrust = 0.25 * S.thrust * S.diameter; 
     }
-    if (stage.at(currentStage).yawthrust == 0) {
-        stage.at(currentStage).yawthrust = 0.25 * stage.at(currentStage).thrust * stage.at(currentStage).height; // Empirical Values
+    if (S.yawthrust == 0) {
+        S.yawthrust = 0.25 * S.thrust * S.diameter;
     }
-    if (stage.at(currentStage).rollthrust == 0) {
-        stage.at(currentStage).rollthrust = 0.1 * stage.at(currentStage).thrust * stage.at(currentStage).diameter * 0.5 * 0.5; // Empirical Values
+    if (S.rollthrust == 0) {
+        S.rollthrust = 0.1 * S.thrust * S.diameter;
     }
+
+    // --- Rotational RCS ---
 
     // Pitch Up
-    stage.at(currentStage).th_att_h[0] = CreateThruster(_V(0, 0, 1), _V(0, 1, 0), 2 * stage.at(currentStage).pitchthrust, stage.at(currentStage).tank, stage.at(currentStage).isp * 100);
-    stage.at(currentStage).th_att_h[1] = CreateThruster(_V(0, 0, -1), _V(0, -1, 0), 2 * stage.at(currentStage).pitchthrust, stage.at(currentStage).tank, stage.at(currentStage).isp * 100);
-    CreateThrusterGroup(stage.at(currentStage).th_att_h.data(), 2, THGROUP_ATT_PITCHUP);
-    MaxTorque.x = 2 * GetThrusterMax(stage.at(currentStage).th_att_h[0]);
+    S.th_att_h[0] = CreateThruster(_V(0, 0, 1), _V(0, 1, 0), 2 * S.pitchthrust, S.tank, S.isp);
+    S.th_att_h[1] = CreateThruster(_V(0, 0, -1), _V(0, -1, 0), 2 * S.pitchthrust, S.tank, S.isp);
+    CreateThrusterGroup(S.th_att_h, 2, THGROUP_ATT_PITCHUP); // th_att_h is already the pointer
+    MaxTorque.x = 2 * GetThrusterMax(S.th_att_h[0]);
 
     // Pitch Down
-    stage.at(currentStage).th_att_h[0] = CreateThruster(_V(0, 0, 1), _V(0, -1, 0), 2 * stage.at(currentStage).pitchthrust, stage.at(currentStage).tank, stage.at(currentStage).isp * 100);
-    stage.at(currentStage).th_att_h[1] = CreateThruster(_V(0, 0, -1), _V(0, 1, 0), 2 * stage.at(currentStage).pitchthrust, stage.at(currentStage).tank, stage.at(currentStage).isp * 100);
-    CreateThrusterGroup(stage.at(currentStage).th_att_h.data(), 2, THGROUP_ATT_PITCHDOWN);
+    S.th_att_h[0] = CreateThruster(_V(0, 0, 1), _V(0, -1, 0), 2 * S.pitchthrust, S.tank, S.isp);
+    S.th_att_h[1] = CreateThruster(_V(0, 0, -1), _V(0, 1, 0), 2 * S.pitchthrust, S.tank, S.isp);
+    CreateThrusterGroup(S.th_att_h, 2, THGROUP_ATT_PITCHDOWN);
 
     // Yaw Left
-    stage.at(currentStage).th_att_h[0] = CreateThruster(_V(0, 0, 1), _V(-1, 0, 0), 2 * stage.at(currentStage).yawthrust, stage.at(currentStage).tank, stage.at(currentStage).isp * 100);
-    stage.at(currentStage).th_att_h[1] = CreateThruster(_V(0, 0, -1), _V(1, 0, 0), 2 * stage.at(currentStage).yawthrust, stage.at(currentStage).tank, stage.at(currentStage).isp * 100);
-    CreateThrusterGroup(stage.at(currentStage).th_att_h.data(), 2, THGROUP_ATT_YAWLEFT);
-    MaxTorque.y = 2 * GetThrusterMax(stage.at(currentStage).th_att_h[0]);
+    S.th_att_h[0] = CreateThruster(_V(0, 0, 1), _V(-1, 0, 0), 2 * S.yawthrust, S.tank, S.isp);
+    S.th_att_h[1] = CreateThruster(_V(0, 0, -1), _V(1, 0, 0), 2 * S.yawthrust, S.tank, S.isp);
+    CreateThrusterGroup(S.th_att_h, 2, THGROUP_ATT_YAWLEFT);
+    MaxTorque.y = 2 * GetThrusterMax(S.th_att_h[0]);
 
     // Yaw Right
-    stage.at(currentStage).th_att_h[0] = CreateThruster(_V(0, 0, 1), _V(1, 0, 0), 2 * stage.at(currentStage).yawthrust, stage.at(currentStage).tank, stage.at(currentStage).isp * 100);
-    stage.at(currentStage).th_att_h[1] = CreateThruster(_V(0, 0, -1), _V(-1, 0, 0), 2 * stage.at(currentStage).yawthrust, stage.at(currentStage).tank, stage.at(currentStage).isp * 100);
-    CreateThrusterGroup(stage.at(currentStage).th_att_h.data(), 2, THGROUP_ATT_YAWRIGHT);
+    S.th_att_h[0] = CreateThruster(_V(0, 0, 1), _V(1, 0, 0), 2 * S.yawthrust, S.tank, S.isp);
+    S.th_att_h[1] = CreateThruster(_V(0, 0, -1), _V(-1, 0, 0), 2 * S.yawthrust, S.tank, S.isp);
+    CreateThrusterGroup(S.th_att_h, 2, THGROUP_ATT_YAWRIGHT);
 
     // Roll Left
-    stage.at(currentStage).th_att_h[0] = CreateThruster(_V(1, 0, 0), _V(0, 1, 0), 2 * stage.at(currentStage).rollthrust, stage.at(currentStage).tank, stage.at(currentStage).isp * 100);
-    stage.at(currentStage).th_att_h[1] = CreateThruster(_V(-1, 0, 0), _V(0, -1, 0), 2 * stage.at(currentStage).rollthrust, stage.at(currentStage).tank, stage.at(currentStage).isp * 100);
-    CreateThrusterGroup(stage.at(currentStage).th_att_h.data(), 2, THGROUP_ATT_BANKLEFT);
-    MaxTorque.z = 2 * GetThrusterMax(stage.at(currentStage).th_att_h[0]);
+    S.th_att_h[0] = CreateThruster(_V(1, 0, 0), _V(0, 1, 0), 2 * S.rollthrust, S.tank, S.isp);
+    S.th_att_h[1] = CreateThruster(_V(-1, 0, 0), _V(0, -1, 0), 2 * S.rollthrust, S.tank, S.isp);
+    CreateThrusterGroup(S.th_att_h, 2, THGROUP_ATT_BANKLEFT);
+    MaxTorque.z = 2 * GetThrusterMax(S.th_att_h[0]);
 
     // Roll Right
-    stage.at(currentStage).th_att_h[0] = CreateThruster(_V(1, 0, 0), _V(0, -1, 0), 2 * stage.at(currentStage).rollthrust, stage.at(currentStage).tank, stage.at(currentStage).isp * 100);
-    stage.at(currentStage).th_att_h[1] = CreateThruster(_V(-1, 0, 0), _V(0, 1, 0), 2 * stage.at(currentStage).rollthrust, stage.at(currentStage).tank, stage.at(currentStage).isp * 100);
-    CreateThrusterGroup(stage.at(currentStage).th_att_h.data(), 2, THGROUP_ATT_BANKRIGHT);
+    S.th_att_h[0] = CreateThruster(_V(1, 0, 0), _V(0, -1, 0), 2 * S.rollthrust, S.tank, S.isp);
+    S.th_att_h[1] = CreateThruster(_V(-1, 0, 0), _V(0, 1, 0), 2 * S.rollthrust, S.tank, S.isp);
+    CreateThrusterGroup(S.th_att_h, 2, THGROUP_ATT_BANKRIGHT);
 
-    // Linear Translation Thrusters
-    if (stage.at(currentStage).linearthrust > 0) {
-        if (stage.at(currentStage).linearisp <= 0) { 
-            stage.at(currentStage).linearisp = stage.at(currentStage).isp * 100; 
+    // --- Linear Translation Thrusters ---
+    if (S.linearthrust > 0) {
+        if (S.linearisp <= 0) { 
+            S.linearisp = S.isp * 100; 
         }
-
+        
         // Forward/Back
-        stage.at(currentStage).th_att_h[0] = CreateThruster(_V(0, 0, 0), _V(0, 0, 1), stage.at(currentStage).linearthrust * 0.5, stage.at(currentStage).tank, stage.at(currentStage).linearisp);
-        stage.at(currentStage).th_att_h[1] = CreateThruster(_V(0, 0, 0), _V(0, 0, 1), stage.at(currentStage).linearthrust * 0.5, stage.at(currentStage).tank, stage.at(currentStage).linearisp);
-        CreateThrusterGroup(stage.at(currentStage).th_att_h.data(), 2, THGROUP_ATT_FORWARD);
+        S.th_att_h[0] = CreateThruster(_V(0, 0, 0), _V(0, 0, 1), S.linearthrust, S.tank, S.linearisp);
+        S.th_att_h[1] = CreateThruster(_V(0, 0, 0), _V(0, 0, 1), S.linearthrust, S.tank, S.linearisp);
+        CreateThrusterGroup(S.th_att_h, 2, THGROUP_ATT_FORWARD);
 
-        stage.at(currentStage).th_att_h[0] = CreateThruster(_V(0, 0, 0), _V(0, 0, -1), stage.at(currentStage).linearthrust * 0.5, stage.at(currentStage).tank, stage.at(currentStage).linearisp);
-        stage.at(currentStage).th_att_h[1] = CreateThruster(_V(0, 0, 0), _V(0, 0, -1), stage.at(currentStage).linearthrust * 0.5, stage.at(currentStage).tank, stage.at(currentStage).linearisp);
-        CreateThrusterGroup(stage.at(currentStage).th_att_h.data(), 2, THGROUP_ATT_BACK);
+        S.th_att_h[0] = CreateThruster(_V(0, 0, 0), _V(0, 0, -1), S.linearthrust, S.tank, S.linearisp);
+        S.th_att_h[1] = CreateThruster(_V(0, 0, 0), _V(0, 0, -1), S.linearthrust, S.tank, S.linearisp);
+        CreateThrusterGroup(S.th_att_h, 2, THGROUP_ATT_BACK);
 
         // Left/Right
-        stage.at(currentStage).th_att_h[0] = CreateThruster(_V(0, 0, 0), _V(-1, 0, 0), stage.at(currentStage).linearthrust * 0.5, stage.at(currentStage).tank, stage.at(currentStage).linearisp);
-        stage.at(currentStage).th_att_h[1] = CreateThruster(_V(0, 0, 0), _V(-1, 0, 0), stage.at(currentStage).linearthrust * 0.5, stage.at(currentStage).tank, stage.at(currentStage).linearisp);
-        CreateThrusterGroup(stage.at(currentStage).th_att_h.data(), 2, THGROUP_ATT_LEFT);
+        S.th_att_h[0] = CreateThruster(_V(0, 0, 0), _V(-1, 0, 0), S.linearthrust, S.tank, S.linearisp);
+        S.th_att_h[1] = CreateThruster(_V(0, 0, 0), _V(-1, 0, 0), S.linearthrust, S.tank, S.linearisp);
+        CreateThrusterGroup(S.th_att_h, 2, THGROUP_ATT_LEFT);
 
-        stage.at(currentStage).th_att_h[0] = CreateThruster(_V(0, 0, 0), _V(1, 0, 0), stage.at(currentStage).linearthrust * 0.5, stage.at(currentStage).tank, stage.at(currentStage).linearisp);
-        stage.at(currentStage).th_att_h[1] = CreateThruster(_V(0, 0, 0), _V(1, 0, 0), stage.at(currentStage).linearthrust * 0.5, stage.at(currentStage).tank, stage.at(currentStage).linearisp);
-        CreateThrusterGroup(stage.at(currentStage).th_att_h.data(), 2, THGROUP_ATT_RIGHT);
+        S.th_att_h[0] = CreateThruster(_V(0, 0, 0), _V(1, 0, 0), S.linearthrust, S.tank, S.linearisp);
+        S.th_att_h[1] = CreateThruster(_V(0, 0, 0), _V(1, 0, 0), S.linearthrust, S.tank, S.linearisp);
+        CreateThrusterGroup(S.th_att_h, 2, THGROUP_ATT_RIGHT);
 
         // Up/Down
-        stage.at(currentStage).th_att_h[0] = CreateThruster(_V(0, 0, 0), _V(0, 1, 0), stage.at(currentStage).linearthrust * 0.5, stage.at(currentStage).tank, stage.at(currentStage).linearisp);
-        stage.at(currentStage).th_att_h[1] = CreateThruster(_V(0, 0, 0), _V(0, 1, 0), stage.at(currentStage).linearthrust * 0.5, stage.at(currentStage).tank, stage.at(currentStage).linearisp);
-        CreateThrusterGroup(stage.at(currentStage).th_att_h.data(), 2, THGROUP_ATT_UP);
+        S.th_att_h[0] = CreateThruster(_V(0, 0, 0), _V(0, 1, 0), S.linearthrust, S.tank, S.linearisp);
+        S.th_att_h[1] = CreateThruster(_V(0, 0, 0), _V(0, 1, 0), S.linearthrust, S.tank, S.linearisp);
+        CreateThrusterGroup(S.th_att_h, 2, THGROUP_ATT_UP);
 
-        stage.at(currentStage).th_att_h[0] = CreateThruster(_V(0, 0, 0), _V(0, -1, 0), stage.at(currentStage).linearthrust * 0.5, stage.at(currentStage).tank, stage.at(currentStage).linearisp);
-        stage.at(currentStage).th_att_h[1] = CreateThruster(_V(0, 0, 0), _V(0, -1, 0), stage.at(currentStage).linearthrust * 0.5, stage.at(currentStage).tank, stage.at(currentStage).linearisp);
-        CreateThrusterGroup(stage.at(currentStage).th_att_h.data(), 2, THGROUP_ATT_DOWN);
+        S.th_att_h[0] = CreateThruster(_V(0, 0, 0), _V(0, -1, 0), S.linearthrust, S.tank, S.linearisp);
+        S.th_att_h[1] = CreateThruster(_V(0, 0, 0), _V(0, -1, 0), S.linearthrust, S.tank, S.linearisp);
+        CreateThrusterGroup(S.th_att_h, 2, THGROUP_ATT_DOWN);
     }
 }
 
@@ -881,15 +923,15 @@ void Multistage2026::RotatePayload(int pns, int nm, VECTOR3 anglesrad) {
     else reference = operator-(payload[pns].off[nm], payload[pns].off[0]);
 
     if (!DeveloperMode) {
-        payloadrotatex[pns][nm] = new MGROUP_ROTATE(payload[pns].msh_idh[nm], NULL, NULL, reference, _V(1, 0, 0), (float)2 * PI);
+        payloadrotatex[pns][nm] = new MGROUP_ROTATE(payload[pns].msh_idh[nm], 0, 0, reference, _V(1, 0, 0), (float)2 * PI);
         RotatePayloadAnim_x[pns][nm] = CreateAnimation(0);
         anim_x[pns][nm] = AddAnimationComponent(RotatePayloadAnim_x[pns][nm], 0.0f, 1.0f, payloadrotatex[pns][nm]);
 
-        payloadrotatey[pns][nm] = new MGROUP_ROTATE(payload[pns].msh_idh[nm], NULL, NULL, reference, _V(0, 1, 0), (float)2 * PI);
+        payloadrotatey[pns][nm] = new MGROUP_ROTATE(payload[pns].msh_idh[nm], 0, 0, reference, _V(0, 1, 0), (float)2 * PI);
         RotatePayloadAnim_y[pns][nm] = CreateAnimation(0);
         anim_y[pns][nm] = AddAnimationComponent(RotatePayloadAnim_y[pns][nm], 0.0f, 1.0f, payloadrotatey[pns][nm]);
 
-        payloadrotatez[pns][nm] = new MGROUP_ROTATE(payload[pns].msh_idh[nm], NULL, NULL, reference, _V(0, 0, 1), (float)2 * PI);
+        payloadrotatez[pns][nm] = new MGROUP_ROTATE(payload[pns].msh_idh[nm], 0, 0, reference, _V(0, 0, 1), (float)2 * PI);
         RotatePayloadAnim_z[pns][nm] = CreateAnimation(0);
         anim_z[pns][nm] = AddAnimationComponent(RotatePayloadAnim_z[pns][nm], 0.0f, 1.0f, payloadrotatez[pns][nm]);
     } else {
@@ -934,23 +976,55 @@ VECTOR3 Multistage2026::RotateVector(const VECTOR3& input, double angle, const V
 
 void Multistage2026::LoadMeshes() {
 
+    // 1. Log the limits BEFORE the loop to see if nStages is garbage
+    char buff[256];
+    sprintf(buff, "DEBUG: LoadMeshes Start - currentStage: %d, nStages: %d, Vector Size: %ld", 
+            currentStage, nStages, stage.size());
+    oapiWriteLog(buff);
+
     // ---------------------------------------------------------
     // 1. Load Main Stages
     // ---------------------------------------------------------
     for (int q = currentStage; q < nStages; q++) {
+
+        sprintf(buff, "DEBUG: LoadMeshes - Processing Loop Index q=%d", q);
+        oapiWriteLog(buff);
+
         VECTOR3 pos = stage[q].off;
 
+        //Start Debug
+        char logBuf[1024];
+        oapiWriteLog((char*)"DEBUG: LoadMeshes - Starting Memory Validation");
+        // 1. Check if the stage vector has enough room
+        sprintf(logBuf, "DEBUG: Stage Index: %d | Vector Capacity: %lu", q, stage.capacity());
+        oapiWriteLog(logBuf);
+        // 2. Check the address of the specific stage object
+        sprintf(logBuf, "DEBUG: stage[%d] Address: %p", q, (void*)&stage[q]);
+        oapiWriteLog(logBuf);
+        // 3. Check the address of the handle itself
+        sprintf(logBuf, "DEBUG: msh_h Address: %p", (void*)&stage[q].msh_h);
+        oapiWriteLog(logBuf);
+        // 4. Perform the load into a TEMP variable first
+        MESHHANDLE hTemp = oapiLoadMeshGlobal(stage[q].meshname);
+        oapiWriteLog((char*)"DEBUG: oapiLoadMeshGlobal returned to hTemp");
+        // 5. The Moment of Truth: Assign to the struct
+        stage[q].msh_h = hTemp;
+        oapiWriteLog((char*)"DEBUG: Assignment to stage[q].msh_h successful!");
+        ///End Debug
+
         // Load the mesh file from disk
-        stage[q].msh_h = oapiLoadMeshGlobal((char*)stage[q].meshname.c_str());
+        //stage[q].msh_h = oapiLoadMeshGlobal((char*)stage[q].meshname.c_str());
+
+        oapiWriteLog((char*)"DEBUG: LoadMeshes BkPt 2!");
 
         // Log the preload action
-        oapiWriteLogV("%s: Stage n.%i Mesh Preloaded: %s", GetName(), q + 1, stage[q].meshname.c_str());
+        oapiWriteLogV("%s: Stage n.%i Mesh Preloaded: %s", GetName(), q + 1, stage[q].meshname);
 
         // Add the mesh to the vessel visual
         stage[q].msh_idh = AddMesh(stage[q].msh_h, &pos);
 
         // Log the final addition with coordinates
-        oapiWriteLogV("%s: Stage n.%i Mesh Added Mesh: %s @ x:%.3f y:%.3f z:%.3f", GetName(), q + 1, stage[q].meshname.c_str(), pos.x, pos.y, pos.z);
+        oapiWriteLogV("%s: Stage n.%i Mesh Added Mesh: %s @ x:%.3f y:%.3f z:%.3f", GetName(), q + 1, stage[q].meshname, pos.x, pos.y, pos.z);
 
         // Load Interstage (if present for this stage)
         if (stage[q].wInter == TRUE) {
@@ -1252,35 +1326,52 @@ SURFHANDLE Multistage2026::GetProperExhaustTexture(char name[MAXLEN]) {
 }
 
 
-//  Separation Logic: creates Ullage engine and exhausts
+// Separation Logic: creates Ullage engine and exhausts
 void Multistage2026::CreateUllageAndBolts() {
-    if (stage.at(currentStage).ullage.wUllage) {
-        stage.at(currentStage).ullage.ignited = false;
-        stage.at(currentStage).ullage.th_ullage = CreateThruster(_V(0, 0, 0), _V(0, 0, 1), stage.at(currentStage).ullage.thrust, stage.at(currentStage).tank, 100000);
+    // 1. Create a reference to the current stage for clarity and safety
+    STAGE &S = stage[currentStage]; 
 
-        for (int i = 0; i < stage.at(currentStage).ullage.N; i++) {
+    // 2. Handle Ullage Motor Creation
+    if (S.ullage.wUllage) {
+        // Fix: Use the new 'ignited' boolean member [cite: 2, 15]
+        S.ullage.ignited = false; 
+
+        // Fix: Use the new 'th_ullage' handle member [cite: 3, 16]
+        // Note: Creating the thruster with its specific thrust, tank, and ISP
+        S.ullage.th_ullage = CreateThruster(_V(0, 0, 0), _V(0, 0, 1), S.ullage.thrust, S.tank, 100000);
+
+        for (int i = 0; i < S.ullage.N; i++) {
             double ull_angle;
-            if (IsOdd((int)stage.at(currentStage).ullage.N)) {
-                if (i < (int)(stage.at(currentStage).ullage.N * 0.5)) {
-                    ull_angle = stage.at(currentStage).ullage.angle * RAD + (i) * ((2 * PI / stage.at(currentStage).ullage.N) / stage.at(currentStage).ullage.rectfactor);
-                } else if (i == (int)(stage.at(currentStage).ullage.N * 0.5)) {
-                    ull_angle = PI + stage.at(currentStage).ullage.angle * RAD;
+            // Angle calculation logic (preserved from original)
+            if (IsOdd((int)S.ullage.N)) {
+                if (i < (int)(S.ullage.N * 0.5)) {
+                    ull_angle = S.ullage.angle * RAD + (i) * ((2 * PI / S.ullage.N));
+                } else if (i == (int)(S.ullage.N * 0.5)) {
+                    ull_angle = PI + S.ullage.angle * RAD;
                 } else {
-                    ull_angle = stage.at(currentStage).ullage.angle * RAD + PI + (i - (int)(stage.at(currentStage).ullage.N * 0.5)) * ((2 * PI / stage.at(currentStage).ullage.N) / stage.at(currentStage).ullage.rectfactor);
+                    ull_angle = S.ullage.angle * RAD + PI + (i - (int)(S.ullage.N * 0.5)) * (2 * PI / S.ullage.N);
                 }
             } else {
-                ull_angle = stage.at(currentStage).ullage.angle * RAD + (i) * (2 * PI / stage.at(currentStage).ullage.N);
+                ull_angle = S.ullage.angle * RAD + (i) * (2 * PI / S.ullage.N);
             }
-            VECTOR3 ulldir = RotateVecZ(stage.at(currentStage).ullage.dir, ull_angle);
-            VECTOR3 ullpos = RotateVecZ(stage.at(currentStage).ullage.pos, ull_angle);
-            AddExhaust(stage.at(currentStage).ullage.th_ullage, stage.at(currentStage).ullage.length, stage.at(currentStage).ullage.diameter, ullpos, ulldir, GetProperExhaustTexture((char*)stage.at(currentStage).ullage.tex.data()));
+
+            VECTOR3 ulldir = RotateVecZ(S.ullage.dir, ull_angle);
+            VECTOR3 ullpos = RotateVecZ(S.ullage.pos, ull_angle);
+
+            // Fix: S.ullage.tex is now a char[256], so we remove .data() [cite: 7]
+            AddExhaust(S.ullage.th_ullage, S.ullage.length, S.ullage.diameter, ullpos, ulldir, GetProperExhaustTexture(S.ullage.tex));
         }
     }
 
-    if (stage.at(currentStage).expbolt.wExpbolt) {
-        PARTICLESTREAMSPEC Pss3 = GetProperPS((char*)stage.at(currentStage).expbolt.pstream.data()).Pss;
-        stage.at(currentStage).expbolt.threxp_h = CreateThruster(stage.at(currentStage).expbolt.pos, stage.at(currentStage).expbolt.dir, 0, stage.at(currentStage).tank, 100000, 100000);
-        AddExhaustStream(stage.at(currentStage).expbolt.threxp_h, &Pss3);
+    // 3. Handle Explosive Separation Bolts
+    if (S.expbolt.wExpbolt) {
+        // Fix: S.expbolt.pstream is now a char[256], so we remove .data() [cite: 8]
+        PARTICLESTREAMSPEC Pss3 = GetProperPS(S.expbolt.pstream).Pss;
+
+        // Fix: Use the new 'threxp_h' handle member [cite: 9, 22]
+        S.expbolt.threxp_h = CreateThruster(S.expbolt.pos, S.expbolt.dir, 0, S.tank, 100000, 100000);
+        
+        AddExhaustStream(S.expbolt.threxp_h, &Pss3);
     }
 }
 
@@ -1333,59 +1424,78 @@ void Multistage2026::VehicleSetup() {
     CreateRCS();
 
     // 6. Booster Engine Setup
+    char nameBuffer[256];
     for (int bi = currentBooster; bi < nBoosters; bi++) {
-        // Create Thruster Handles
+        // A. Create Thruster Handles
         for (int bn = 0; bn < booster.at(bi).N; bn++) {
+            // Safety check to prevent crashing if N > 4
+            if (bn >= 4) break; 
             VECTOR3 pos = (Misc.thrustrealpos) ? GetBoosterPos(bi, bn) : _V(0,0,0);
             VECTOR3 dir = (Misc.thrustrealpos) ? booster.at(bi).eng_dir : _V(0,0,1);
-            booster.at(bi).th_booster_h.at(bn) = CreateThruster(pos, dir, booster.at(bi).thrust, booster.at(bi).tank, booster.at(bi).isp);
+            // Standardize ISP args (Vacuum/SeaLevel)
+            booster.at(bi).th_booster_h.at(bn) = CreateThruster(pos, dir, booster.at(bi).thrust / booster.at(bi).N, booster.at(bi).tank, booster.at(bi).isp, booster.at(bi).isp, 101400.0);
         }
-        booster.at(bi).Thg_boosters_h = CreateThrusterGroup(booster.at(bi).th_booster_h.data(), booster.at(bi).N, THGROUP_USER);
-
-        // Define Particles
+        // Create Group (Pass the raw pointer to the array data)
+        if (booster.at(bi).N > 0) {
+            booster.at(bi).Thg_boosters_h = CreateThrusterGroup(booster.at(bi).th_booster_h.data(), booster.at(bi).N, THGROUP_MAIN);
+        }
+        // B. Define Particles
         if (booster.at(bi).nEngines == 0) {
-            // Simple Booster Logic (One effect per booster)
+            // --- Simple Booster Logic ---
             for (int bii = 0; bii < booster.at(bi).N; bii++) {
+                if (bii >= 4) break;
                 booster.at(bi).eng[bii] = _V(0, 0, -booster.at(bi).height * 0.5);
-                VECTOR3 engofs = operator+(GetBoosterPos(bi, bii), booster.at(bi).eng[bii]);
-
-                AddExhaust(booster.at(bi).th_booster_h.at(bii), 10 * booster.at(bi).eng_diameter, booster.at(bi).eng_diameter, engofs, operator*(booster.at(bi).eng_dir, -1), GetProperExhaustTexture((char*)booster.at(bi).eng_tex.data()));
-
+                AddExhaust(booster.at(bi).th_booster_h.at(bii), 10 * booster.at(bi).eng_diameter, 1.0);
                 if (booster.at(bi).wps1) {
-                    PARTICLESTREAMSPEC Pss4 = GetProperPS((char*)booster.at(bi).eng_pstream1.c_str()).Pss;
-                    AddExhaustStreamGrowing(booster.at(bi).th_booster_h.at(bii), engofs, &Pss4, GetProperPS((char*)booster.at(bi).eng_pstream1.c_str()).Growing, GetProperPS((char*)booster.at(bi).eng_pstream1.c_str()).GrowFactor_size, GetProperPS((char*)booster.at(bi).eng_pstream1.c_str()).GrowFactor_rate, TRUE, TRUE, bi, bii);
+                    strncpy(nameBuffer, booster.at(bi).eng_pstream1.c_str(), 255);
+                    nameBuffer[255] = '\0';
+                    PARTICLE *P1 = new PARTICLE();
+                    *P1 = GetProperPS(nameBuffer);
+                    AddExhaustStreamGrowing(booster.at(bi).th_booster_h.at(bii), _V(0,0,0), &P1->Pss, true, 8.0, 1.0, false, true, bi, bii);
                 }
                 if (booster.at(bi).wps2) {
-                    PARTICLESTREAMSPEC Pss5 = GetProperPS((char*)booster.at(bi).eng_pstream2.c_str()).Pss;
-                    AddExhaustStreamGrowing(booster.at(bi).th_booster_h.at(bii), engofs, &Pss5, GetProperPS((char*)booster.at(bi).eng_pstream2.c_str()).Growing, GetProperPS((char*)booster.at(bi).eng_pstream2.c_str()).GrowFactor_size, GetProperPS((char*)booster.at(bi).eng_pstream2.c_str()).GrowFactor_rate, TRUE, TRUE, bi, bii);
+                    strncpy(nameBuffer, booster.at(bi).eng_pstream2.c_str(), 255);
+                    nameBuffer[255] = '\0';
+                    PARTICLE *P2 = new PARTICLE();
+                    *P2 = GetProperPS(nameBuffer);
+                    AddExhaustStreamGrowing(booster.at(bi).th_booster_h.at(bii), _V(0,0,0), &P2->Pss, true, 8.0, 1.0, false, true, bi, bii);
                 }
             }
         } else {
-            // Complex Booster Logic (Multiple engines per booster)
+            // --- Complex Booster Logic ---
             for (int bii = 0; bii < booster.at(bi).nEngines; bii++) {
                 for (int biii = 1; biii < booster.at(bi).N + 1; biii++) {
-                    double angle = booster.at(bi).angle * RAD + (biii - 1) * 2 * PI / booster.at(bi).N;
-                    VECTOR3 engofs = operator+(GetBoosterPos(bi, biii), RotateVecZ(booster.at(bi).eng[bii], angle));
+                    int idx = biii - 1;
+                    if (idx >= 4) break; // Safety Check
 
-                    AddExhaust(booster.at(bi).th_booster_h[biii - 1], 10 * booster.at(bi).eng_diameter, booster.at(bi).eng_diameter, engofs, operator*(booster.at(bi).eng_dir, -1), GetProperExhaustTexture((char*)booster.at(bi).eng_tex.data()));
+                    AddExhaust(booster.at(bi).th_booster_h.at(idx), 10 * booster.at(bi).eng_diameter, 1.0);
 
                     if (booster.at(bi).wps1) {
-                        PARTICLESTREAMSPEC Pss6 = GetProperPS((char*)booster.at(bi).eng_pstream1.c_str()).Pss;
-                        AddExhaustStreamGrowing(booster.at(bi).th_booster_h[biii - 1], engofs, &Pss6, GetProperPS((char*)booster.at(bi).eng_pstream1.c_str()).Growing, GetProperPS((char*)booster.at(bi).eng_pstream1.c_str()).GrowFactor_size, GetProperPS((char*)booster.at(bi).eng_pstream1.c_str()).GrowFactor_rate, TRUE, TRUE, bi, biii - 1);
+                        strncpy(nameBuffer, booster.at(bi).eng_pstream1.c_str(), 255);
+                        nameBuffer[255] = '\0';
+                        PARTICLE *P1 = new PARTICLE();
+                        *P1 = GetProperPS(nameBuffer);
+                        AddExhaustStreamGrowing(booster.at(bi).th_booster_h.at(idx), _V(0,0,0), &P1->Pss, true, 8.0, 1.0, false, true, bi, idx);
                     }
                     if (booster.at(bi).wps2) {
-                        PARTICLESTREAMSPEC Pss7 = GetProperPS((char*)booster.at(bi).eng_pstream2.c_str()).Pss;
-                        AddExhaustStreamGrowing(booster.at(bi).th_booster_h[biii - 1], engofs, &Pss7, GetProperPS((char*)booster.at(bi).eng_pstream2.c_str()).Growing, GetProperPS((char*)booster.at(bi).eng_pstream2.c_str()).GrowFactor_size, GetProperPS((char*)booster.at(bi).eng_pstream2.c_str()).GrowFactor_rate, TRUE, TRUE, bi, biii - 1);
+                        strncpy(nameBuffer, booster.at(bi).eng_pstream2.c_str(), 255);
+                        nameBuffer[255] = '\0';
+                        PARTICLE *P2 = new PARTICLE();
+                        *P2 = GetProperPS(nameBuffer);
+                        AddExhaustStreamGrowing(booster.at(bi).th_booster_h.at(idx), _V(0,0,0), &P2->Pss, true, 8.0, 1.0, false, true, bi, idx);
                     }
                 }
             }
         }
 
-        // Explosive Bolts
+        // C. Explosive Bolts
         if (booster.at(bi).expbolt.wExpbolt) {
-            booster.at(bi).expbolt.threxp_h = CreateThruster(booster.at(bi).expbolt.pos, booster.at(bi).expbolt.dir, 0, booster.at(bi).tank, 100000, 100000);
-            PARTICLESTREAMSPEC Pss8 = GetProperPS((char*)booster.at(bi).expbolt.pstream.c_str()).Pss;
-            AddExhaustStream(booster.at(bi).expbolt.threxp_h, &Pss8);
+            booster.at(bi).expbolt.threxp_h = CreateThruster(booster.at(bi).expbolt.pos, _V(0,1,0), 500, NULL, 0, 0, 101400);
+            strncpy(nameBuffer, booster.at(bi).expbolt.pstream, 255);
+            nameBuffer[255] = '\0';
+            PARTICLE P_Bolt = GetProperPS(nameBuffer);
+            // AddExhaustStream(Handle, Offset, Spec*)
+            AddExhaustStream(booster.at(bi).expbolt.threxp_h, _V(0,0,0), &P_Bolt.Pss);
         }
     }
 
@@ -1435,6 +1545,10 @@ void Multistage2026::VehicleSetup() {
     if (currentBooster < nBoosters) wBoosters = TRUE;
     UpdateMass();
     UpdatePMI();
+
+    bVesselInitialized = true; // <--- Rocket is ready, enable HUD
+    oapiWriteLog((char*)"DEBUG: VehicleSetup Complete. Systems Online.");
+
 }
 
 // ==============================================================
@@ -1486,27 +1600,30 @@ void Multistage2026::Spawn(int type, int current) {
         }
         break;
 
-    case TSTAGE:
-        GetMeshOffset(stage.at(current).msh_idh, ofs);
-        vel = _V(stage.at(current).speed.x, stage.at(current).speed.y, stage.at(current).speed.z);
+case TSTAGE:
+        // 1. Use a reference to avoid calling .at() repeatedly
+        { STAGE &S = stage[current];
+
+        GetMeshOffset(S.msh_idh, ofs);
+        // 2. Direct vector assignment is cleaner
+        vel = S.speed;
 
         Local2Rel(ofs, vs.rpos);
         GlobalRot(vel, rofs);
 
-        vs.rvel.x = rvel.x + rofs.x;
-        vs.rvel.y = rvel.y + rofs.y;
-        vs.rvel.z = rvel.z + rofs.z;
-        vs.vrot.x = vrot.x + stage.at(current).rot_speed.x;
-        vs.vrot.y = vrot.y + stage.at(current).rot_speed.y;
-        vs.vrot.z = vrot.z + stage.at(current).rot_speed.z;
+        // 3. Coordinate math remains the same
+        vs.rvel = rvel + rofs;
+        vs.vrot = vrot + S.rot_speed;
 
-        strcpy(mn, stage.at(current).meshname.c_str());
+        // 4. FIX: meshname and module are now char arrays (no .c_str())
+        strncpy(mn, S.meshname, 255);
 
-        oapiCreateVesselEx(mn, stage.at(current).module.c_str(), &vs);
+        // 5. FIX: Call oapiCreateVesselEx with the raw char pointers
+        oapiCreateVesselEx(mn, S.module, &vs);
         oapiWriteLogV("%s: Stage n.%i jettisoned name: %s @%.3f", GetName(), current + 1, mn, MET);
 
         stage_ignition_time = MET;
-        break;
+        break;}
 
     case TPAYLOAD:
         // Case 1: Static Payload (Mesh inside the rocket)
@@ -1671,27 +1788,39 @@ void Multistage2026::Jettison(int type, int current) {
         if (currentBooster >= nBoosters) wBoosters = false;
         break;
 
-    case TSTAGE:
-        Spawn(type, current);
+case TSTAGE:
+        {
+        // 1. Use a local index to keep the math clear before we increment the global state
+        int oldStage = current; // 'current' is passed into Jettison()
 
-        DelMesh(stage.at(current).msh_idh);
+        Spawn(type, oldStage);
+
+        // 2. Cleanup old stage resources
+        // Replaced .at() with []
+        DelMesh(stage[oldStage].msh_idh);
         ClearThrusterDefinitions();
-        DelPropellantResource(stage.at(current).tank);
+        DelPropellantResource(stage[oldStage].tank);
 
+        // 3. Move to the next stage
         currentStage += 1;
 
         UpdateMass();
         UpdatePMI();
 
-        // Initialize the next stage's systems
+        // 4. Initialize the next stage's systems
         CreateUllageAndBolts();
         CreateMainThruster();
         CreateRCS();
 
-        // Shift Center of Gravity to match the new stage configuration
-        ShiftCG(_V(0, 0, (stage[current + 1].off.z - stage.at(current).off.z)));
+        // 5. Shift Center of Gravity
+        // Logic: Shift by the difference between the NEW stage (currentStage) 
+        // and the OLD stage (oldStage)
+        if (currentStage < nStages) {
+            double offsetShift = stage[currentStage].off.z - stage[oldStage].off.z;
+            ShiftCG(_V(0, 0, offsetShift));
+        }
         SetCameraOffset(_V(0, 0, 0));
-        break;
+        break;}
 
     case TPAYLOAD:
         Spawn(type, current);
@@ -1827,23 +1956,30 @@ void Multistage2026::ComplexFlight() {
     if (UpdateComplex >= 1) {
         UpdateComplex = 0;
 
+        // Reference to avoid repetitive indexing
+        STAGE &S = stage[currentStage];
+
         // Oscillate Main Engines
-        for (int i = 0; i < stage.at(currentStage).nEngines; i++) {
-            double oscillation = 1.0 + (stage.at(currentStage).engine_amp[i] * sin(2 * PI / stage.at(currentStage).freq[i] * MET + stage.at(currentStage).engine_phase[i]));
-            double newMax = (stage.at(currentStage).thrust / stage.at(currentStage).nEngines) * oscillation;
-            SetThrusterMax0(stage.at(currentStage).th_main_h.at(i), newMax);
+        for (int i = 0; i < S.nEngines; i++) {
+            // Replaced .at() with direct array access
+            double oscillation = 1.0 + (S.engine_amp[i] * sin(2 * PI / S.freq[i] * oapiGetSimTime() + S.engine_phase[i]));
+            double newMax = (S.thrust / S.nEngines) * oscillation;
+            // Set max thrust using the fixed array th_main_h
+            SetThrusterMax0(S.th_main_h[i], newMax);
         }
+
         // Oscillate Booster Engines
         if (wBoosters) {
-            for (int j = 0; j < booster.at(currentBooster).N; j++) {
-                double oscillation = 1.0 + (booster.at(currentBooster).engine_amp[j] * sin(2 * PI / booster.at(currentBooster).freq[j] * MET + booster.at(currentBooster).engine_phase[j]));
-                double newMax = booster.at(currentBooster).thrust * oscillation;
-                SetThrusterMax0(booster.at(currentBooster).th_booster_h.at(j), newMax);
+            BOOSTER &B = booster[currentBooster]; // Assumes booster is now a fixed array/struct
+            for (int j = 0; j < B.N; j++) {
+                double oscillation = 1.0 + (B.engine_amp[j] * sin(2 * PI / B.freq[j] * oapiGetSimTime() + B.engine_phase[j]));
+                double newMax = B.thrust * oscillation;
+                // Replaced .at(j) with [j]
+                SetThrusterMax0(B.th_booster_h[j], newMax);
             }
         }
     }
 }
-
 // --------------------------------------------------------------
 // Boiloff()
 // Simulates the slow evaporation of cryogenic propellants (LOX/LH2)
@@ -2245,17 +2381,18 @@ void Multistage2026::Failure() {
     int check = rand() % 1000;
 
     // Scenario A: Total Destruction (Boom)
-    // 25% chance if it's the first stage
     if ((currentStage == 0) && (check < 250)) {
         boom();
     }
     // Scenario B: Engine Failure (Shut down one engine)
     else {
-        int engineout = rand() % stage.at(currentStage).nEngines;
+        // Direct index access instead of .at()
+        int engineout = rand() % stage[currentStage].nEngines;
 
-        // Kill thrust resource
-        SetThrusterResource(stage.at(currentStage).th_main_h.at(engineout), NULL);
-        oapiWriteLogV("%s: ENGINE FAILURE! Stage %i, Engine %i shutdown.", GetName(), currentStage + 1, engineout + 1);
+        // Kill thrust resource using fixed array indexing
+        SetThrusterResource(stage[currentStage].th_main_h[engineout], NULL);
+        oapiWriteLogV("%s: ENGINE FAILURE! Stage %i, Engine %i shutdown.", 
+                      GetName(), currentStage + 1, engineout);
     }
 }
 
@@ -2379,12 +2516,17 @@ void Multistage2026::FLY(double simtime, double simdtime, double mjdate) {
 
     // 1. Handle Staging Delays (Autopilot Active)
     if (APstat) {
-        if (stage.at(currentStage).currDelay > 0) { 
-            stage.at(currentStage).currDelay -= simdtime; 
-            stage.at(currentStage).StageState = STAGE_WAITING; 
+        // Reference to the current stage to replace .at()
+        STAGE &S = stage[currentStage];
+        // Handle main stage ignition delay
+        if (S.currDelay > 0) {
+            S.currDelay -= simdtime;
+            S.StageState = STAGE_WAITING;
         }
-        if (stage.at(currentStage).interstage.currDelay > 0) { 
-            stage.at(currentStage).interstage.currDelay -= simdtime; 
+
+        // Handle interstage jettison delay
+        if (S.interstage.currDelay > 0) {
+            S.interstage.currDelay -= simdtime;
         }
     }
 
@@ -2465,7 +2607,7 @@ void Multistage2026::FLY(double simtime, double simdtime, double mjdate) {
             stage.at(currentStage).waitforreignition += simdtime;
             if (stage.at(currentStage).waitforreignition >= 3) {
                 for (int i = 0; i < stage.at(currentStage).nEngines; i++) {
-                    SetThrusterResource(stage.at(currentStage).th_main_h.at(i), NULL);
+                    SetThrusterResource(stage[currentStage].th_main_h[i], NULL);
                 }
                 stage.at(currentStage).DenyIgnition = TRUE;
             }
@@ -2475,16 +2617,21 @@ void Multistage2026::FLY(double simtime, double simdtime, double mjdate) {
     // 8. Telemetry & Systems Update
     if (tlmidx < TLMSECS) Telemetry();
 
-    // Battery Drain
-    if (stage.at(currentStage).batteries.wBatts) {
-        stage.at(currentStage).batteries.CurrentCharge -= oapiGetSimStep();
-        if (stage.at(currentStage).batteries.CurrentCharge <= 0) {
-            stage.at(currentStage).batteries.CurrentCharge = 0;
-            ClearThrusterDefinitions(); // Power failure -> Engines cut
+    // 9. Battery Drain Logic
+    STAGE &S = stage[currentStage]; // Use direct indexing 
+    if (S.batteries.wBatts) {
+        // Drain charge based on simulation step time
+        S.batteries.CurrentCharge -= oapiGetSimStep();
+        // Power Failure Scenario
+        if (S.batteries.CurrentCharge <= 0) {
+            S.batteries.CurrentCharge = 0;
+            // Critical System Failure: Cut all engines if power is lost
+            ClearThrusterDefinitions();
+            oapiWriteLogV("%s: BLACKOUT! Battery depleted on Stage %i.",GetName(), currentStage + 1);
         }
     }
 
-    // Complex Flight (Thrust Oscillations / Failure Simulation)
+    // 10. Complex Flight (Thrust Oscillations / Failure Simulation)
     if ((Complex) && (GetDrag() > 1000)) {
         ComplexFlight();
         // Add aerodynamic stress forces
@@ -2499,32 +2646,47 @@ void Multistage2026::FLY(double simtime, double simdtime, double mjdate) {
         }
     }
 
-    // Ullage Motors Logic
-    if (stage.at(currentStage).ullage.wUllage) {
-        bool in_anticipation_window = (stage.at(currentStage).currDelay < stage.at(currentStage).ullage.anticipation);
+    // 11. Ullage Motors Logic
+    if (stage[currentStage].ullage.wUllage) {
+        // Reference for cleaner code
+        STAGE &S = stage[currentStage];
+        // Check if we are within the lead-time window before main engine ignition
+        bool in_anticipation_window = (S.currDelay < S.ullage.anticipation);
 
-        if ((!stage.at(currentStage).ullage.ignited) && in_anticipation_window) {
-            SetThrusterLevel(stage.at(currentStage).ullage.th_ullage, 1);
-            stage.at(currentStage).ullage.ignited = TRUE;
+        // A. Ignition Trigger
+        if (!S.ullage.ignited && in_anticipation_window) {
+            SetThrusterLevel(S.ullage.th_ullage, 1.0);
+            S.ullage.ignited = true;
+            oapiWriteLogV("%s: Ullage Motors Ignited. Stage: %i", GetName(), currentStage + 1);
         }
-        else if ((stage.at(currentStage).ullage.ignited) && (stage.at(currentStage).IgnitionTime != 0) && (MET - stage.at(currentStage).IgnitionTime > stage.at(currentStage).ullage.overlap)) {
-            SetThrusterLevel(stage.at(currentStage).ullage.th_ullage, 0);
-        }
-    }
-
-    // Explosive Bolts (Separation Motors)
-    if (stage.at(currentStage).expbolt.wExpbolt) {
-        if (RemBurnTime(currentStage) < stage.at(currentStage).expbolt.anticipation) {
-            SetThrusterLevel(stage.at(currentStage).expbolt.threxp_h, 1);
-        }
-    }
-
-    if (booster.at(currentBooster).expbolt.wExpbolt) {
-        if (BoosterRemBurnTime(currentBooster) < booster.at(currentBooster).expbolt.anticipation) {
-            SetThrusterLevel(booster.at(currentBooster).expbolt.threxp_h, 1);
+        // B. Shutdown Logic
+        // Shut down if ignited AND main engines have been running longer than the 'overlap' period
+        else if (S.ullage.ignited && (S.IgnitionTime != 0) && 
+            (MET - S.IgnitionTime > S.ullage.overlap)) {
+        SetThrusterLevel(S.ullage.th_ullage, 0.0);
+        // Optional: Reset ignited to false if you need to prevent re-entry into this block
+        // S.ullage.ignited = false; 
         }
     }
 
+    // 12. Explosive Bolts (Separation Motors)
+    // A. Main Stage Separation Bolts
+    if (stage[currentStage].expbolt.wExpbolt) {
+        STAGE &S = stage[currentStage];
+        if (RemBurnTime(currentStage) < S.expbolt.anticipation) {
+            // Fix: Use direct array indexing and the newly added threxp_h member
+            SetThrusterLevel(S.expbolt.threxp_h, 1.0);
+        }
+    }
+
+    // B. Booster Separation Bolts
+    if (wBoosters && booster[currentBooster].expbolt.wExpbolt) {
+        BOOSTER &B = booster[currentBooster];
+        if (BoosterRemBurnTime(currentBooster) < B.expbolt.anticipation) {
+            // Fix: Replace booster.at() with booster[]
+            SetThrusterLevel(B.expbolt.threxp_h, 1.0);
+        }
+    }
     MET += simdtime;
 }
 
@@ -2533,6 +2695,8 @@ void Multistage2026::FLY(double simtime, double simdtime, double mjdate) {
 // ==============================================================
 
 void Multistage2026::clbkSetClassCaps(FILEHANDLE cfg) {
+
+    oapiWriteLog((char*)"DEBUG: clbkSetClassCaps Called!");
 
     // 1. Initialize Variables
     initGlobalVars();
@@ -2614,6 +2778,8 @@ void Multistage2026::clbkSetClassCaps(FILEHANDLE cfg) {
     Particle[15].Pss.atmsmap = PARTICLESTREAMSPEC::ATM_FLAT;
     Particle[15].Pss.amin = 0;
     Particle[15].Pss.amax = 0;
+
+    oapiWriteLog((char*)"DEBUG: clbkSetClass Finished!");
 }
 
 // ==============================================================
@@ -2691,8 +2857,10 @@ void Multistage2026::clbkLoadStateEx(FILEHANDLE scn, void* vs)
             currentPayload -= 1;
         }
         else if (!strnicmp(line, "FAIRING", 7)) {
-            sscanf(line + 7, "%i", &wFairing);
-            if ((wFairing < 0) || (wFairing > 1)) { wFairing = 0; }
+            int tmpFairing = 0;
+            if (sscanf(line + 7, "%i", &tmpFairing) == 1) {
+                wFairing = (tmpFairing != 0);
+            }
         }
         else if (!strnicmp(line, "CONFIGURATION", 13)) {
             sscanf(line + 13, "%i", &Configuration);
@@ -2794,6 +2962,7 @@ void Multistage2026::clbkLoadStateEx(FILEHANDLE scn, void* vs)
 
 // Updated signature to match header
 int Multistage2026::clbkConsumeBufferedKey(int key, bool down, char* kstate) {
+
     if (!down) return 0;
 
     // 'J' Key: Jettison Logic
@@ -2820,6 +2989,7 @@ int Multistage2026::clbkConsumeBufferedKey(int key, bool down, char* kstate) {
                 }
             }
         }
+        oapiWriteLog((char*)"DEBUG: J-Key Called!");
         return 1;
     }
 
@@ -2834,6 +3004,7 @@ int Multistage2026::clbkConsumeBufferedKey(int key, bool down, char* kstate) {
                 return 0; 
             }
         }
+        oapiWriteLog((char*)"DEBUG: F-Key Called!");
         return 1;
     }
 
@@ -2842,6 +3013,7 @@ int Multistage2026::clbkConsumeBufferedKey(int key, bool down, char* kstate) {
         if (!APstat) { APstat = TRUE; return 0; }
         else if (APstat) { APstat = false; return 0; }
         else { return 0; }
+        oapiWriteLog((char*)"DEBUG: P-Key Called!");
         return 1;
     }
 
@@ -2918,6 +3090,9 @@ int Multistage2026::clbkConsumeDirectKey(char* kstate) {
 // ==============================================================
 
 void Multistage2026::clbkSaveState(FILEHANDLE scn) {
+
+    oapiWriteLog((char*)"DEBUG: clbkSaveState Called!");
+
     char savebuff[256], savevalbuff[256];
     if (HangarMode) Configuration = 0;
     SaveDefaultState(scn);
@@ -2985,6 +3160,8 @@ void Multistage2026::clbkSaveState(FILEHANDLE scn) {
 
 void Multistage2026::clbkPreStep(double simt, double simdt, double mjd) {
 
+    //oapiWriteLog((char*)"DEBUG: clbkPreStep Called!");
+
     // 1. Autopilot Pre-Launch Logic
     if ((APstat) && (Configuration == 0)) {
         VinkaAutoPilot();
@@ -3039,6 +3216,7 @@ void Multistage2026::clbkPostStep(double simt, double simdt, double mjd) {
 
     // 1. Detect Liftoff (Thrust > 95% while in Config 0)
     if ((GetThrusterGroupLevel(THGROUP_MAIN) > 0.95) && (Configuration == 0)) {
+        oapiWriteLog((char*)"DEBUG: clbkPostStep - LIFTOFF! Throttle > 95%");
         Configuration = 1;
         MET = 0; // Reset Mission Timer to 0 at liftoff
     }
@@ -3079,40 +3257,88 @@ void Multistage2026::clbkPostStep(double simt, double simdt, double mjd) {
 // Heads Up Display (HUD) - Minimal Debug Version
 // ==============================================================
 
-bool Multistage2026::clbkDrawHUD(int mode, const HUDPAINTSPEC* hps, oapi::Sketchpad* skp) {
+bool Multistage2026::clbkDrawHUD(int mode, const HUDPAINTSPEC *hps, oapi::Sketchpad *skp)
+{
+    // ---------------------------------------------------------
+    // GATEKEEPERS
+    // ---------------------------------------------------------
+    if (!bVesselInitialized) return false;
+    if (stage.empty()) return false;
+    if (currentStage < 0 || currentStage >= stage.size()) return false;
 
-    // Draw default Orbiter HUD elements (Pitch ladder, Velocity vector, etc.)
-    VESSEL3::clbkDrawHUD(mode, hps, skp);
-
-    // Prepare text buffers
-    char buff[128];
+    // ---------------------------------------------------------
+    // DRAWING VARIABLES
+    // ---------------------------------------------------------
     int x = 10;
-    int y = 10; // Top-left corner
-    int line_height = 20;
+    int y = 200; 
+    int line_h = 18; 
+    char buff[256]; 
 
-    // 1. Mission Elapsed Time (MET)
-    VECTOR3 met = hms(MET);
-    snprintf(buff, sizeof(buff), "MET: %02.0f:%02.0f:%02.0f", met.x, met.y, met.z);
+    // --- SECTION A: BASIC STATUS ---
+    sprintf(buff, "--- MultiStage TELEMETRY ---");
     skp->Text(x, y, buff, strlen(buff));
-    y += line_height;
+    y += line_h * 1.5;
 
-    // 2. Stage Info (Critical for debugging)
-    if (currentStage < nStages) {
-        snprintf(buff, sizeof(buff), "Stage: %d/%d  (State: %d)", currentStage + 1, nStages, stage.at(currentStage).StageState);
-        skp->Text(x, y, buff, strlen(buff));
-        y += line_height;
-    } else {
-        skp->Text(x, y, "Coast Phase", 11);
-        y += line_height;
+    // MET
+    sprintf(buff, "MET: %.1f s", oapiGetSimTime());
+    skp->Text(x, y, buff, strlen(buff));
+    y += line_h;
+
+    // Stage State
+    sprintf(buff, "STAGE: %d / %ld  (State: %d)", currentStage + 1, stage.size(), stage.at(currentStage).StageState);
+    skp->Text(x, y, buff, strlen(buff));
+    y += line_h * 1.5;
+
+
+    // --- SECTION B: FLIGHT DYNAMICS ---
+    // Altitude
+    double alt = GetAltitude();
+    if (alt < 10000) sprintf(buff, "ALT:  %.1f m", alt);
+    else             sprintf(buff, "ALT:  %.2f km", alt / 1000.0);
+    skp->Text(x, y, buff, strlen(buff));
+    y += line_h;
+
+    // Vertical Speed
+    VECTOR3 vel_air;
+    GetAirspeedVector(FRAME_HORIZON, vel_air);
+    sprintf(buff, "V/S:  %.1f m/s", vel_air.y);
+    skp->Text(x, y, buff, strlen(buff));
+    y += line_h;
+
+    // Mach
+    sprintf(buff, "MACH: %.2f", GetMachNumber());
+    skp->Text(x, y, buff, strlen(buff));
+    y += line_h * 1.5;
+
+
+    // --- SECTION C: GUIDANCE ---
+    sprintf(buff, "PITCH: %.1f deg", GetPitch() * DEG);
+    skp->Text(x, y, buff, strlen(buff));
+    y += line_h;
+
+    sprintf(buff, "ROLL:  %.1f deg", GetBank() * DEG);
+    skp->Text(x, y, buff, strlen(buff));
+    y += line_h * 1.5;
+
+
+    // --- SECTION D: ENGINES ---
+    // 1. THRUST
+    double th_level = 0.0;
+
+    if (stage[currentStage].nEngines > 0) {
+        THRUSTER_HANDLE hTh = stage[currentStage].th_main_h[0];
+        if (hTh != NULL) {
+             th_level = GetThrusterLevel(hTh);
+        }
     }
+    sprintf(buff, "THRUST: %.1f %%", th_level * 100.0);
+    skp->Text(x, y, buff, strlen(buff));
+    y += line_h;
 
-    // 3. Autopilot Status
-    if (APstat) {
-        skp->Text(x, y, "AP: ENGAGED", 11);
-        y += line_height;
-    }
+    skp->Text(x, y, buff, strlen(buff));
+    y += line_h;
 
-    return true;
+    return false; 
 }
 
 // ==============================================================
@@ -3120,6 +3346,8 @@ bool Multistage2026::clbkDrawHUD(int mode, const HUDPAINTSPEC* hps, oapi::Sketch
 // ==============================================================
 
 void Multistage2026::clbkPostCreation(void) {
+
+    oapiWriteLog((char*)"DEBUG: clbkPostCreation Called!");
 
     // 1. Initialize Visuals
     // Check if we are focusing on the vessel to setup camera
@@ -3150,6 +3378,9 @@ void Multistage2026::clbkPostCreation(void) {
 // Visual Resource Loading (Mesh Hooks)
 // --------------------------------------------------------------
 void Multistage2026::clbkVisualCreated(VISHANDLE vis, int refcount) {
+
+    oapiWriteLog((char*)"DEBUG: clbkVisualCreated Called!");
+
     // This is where we would attach dynamic lights or particle streams 
     // that depend on the visual mesh being present.
     // For now, standard Orbiter handling is sufficient.
@@ -3287,49 +3518,71 @@ int Multistage2026::GetAutopilotStatus() const {
 // ==============================================================
 // Generic Callback (MFD Communication)
 // ==============================================================
-
 int Multistage2026::clbkGeneric(int msgid, int prm, void* context) {
     switch (msgid) {
+        case VMSG_MS26_IDENTIFY: 
+            return VMSG_MS26_IDENTIFY;
 
-    // MFD Request: "Are you a Multistage rocket?"
-    case VMSG_LUAINTERPRETER:
-        return 100; // Legacy ID confirming identity
+        case VMSG_MS26_GETDATA: 
+            return (intptr_t)this;
 
-    // MFD Request: "Give me your current status"
-    case VMSG_USER:
-        return (long)this; // Return pointer to self so MFD can read data
+        case VMSG_MS26_TOGGLE_AP:
+            ToggleAP();
+            return 1;
 
-    // Command: "Jettison Next Stage" (From MFD Button)
-    case VMSG_JETTISON:
-        if (currentBooster < nBoosters) {
-            Jettison(TBOOSTER, currentBooster);
-        } else if (currentStage < nStages - 1) {
-            Jettison(TSTAGE, currentStage);
-        }
-        return 1;
+        case VMSG_MS26_DELETE_STEP:
+            VinkaDeleteStep(prm); 
+            return 1;
 
-    // Command: "Toggle Autopilot" (From MFD Button)
-    case VMSG_AUTOPILOT:
-        APstat = !APstat;
-        return 1;
+        case VMSG_MS26_WRITE_GNC:
+            WriteGNCFile();
+            return 1;
+        case VMSG_MS26_JETTISON_FAI:
+            // Add jettison logic
+            return 1;
+        case VMSG_MS26_ADD_STEP:
+            VinkaAddStep((char*)context); // Cast back to char*
+            return 1;
+        case VMSG_MS26_LOAD_TLM:
+            parseTelemetryFile((char*)context);
+            return 1;
+        case VMSG_MS26_SET_PMC:
+            // Cast context to double pointer, then dereference
+            SetPegMajorCycleInterval(*(double*)context); 
+            return 1;
+        case VMSG_MS26_SET_ALT:
+            {
+            double* steps = (double*)context;
+            SetNewAltSteps(steps[0], steps[1], steps[2], steps[3]);
+            }
+            return 1;
+        case VMSG_MS26_SET_PITCHLIMIT:
+            SetPegPitchLimit(*(double*)context); // Dereference the pointer
+            return 1;
     }
     return 0;
+}
+
+// Standard Orbiter Generic Cockpit Enabler
+bool Multistage2026::clbkLoadGenericCockpit()
+{
+    // Debug print to PROVE Orbiter is calling this
+    oapiWriteLog((char*)"DEBUG: clbkLoadGenericCockpit Called!");
+
+    // 1. Define where the camera sits (Pilot's Eye View)
+    // Adjust the '15.0' to be the height of your rocket's nose cone/cockpit
+    SetCameraOffset(_V(0, 0, 15.0));
+
+    // 2. Tell Orbiter to use the standard 2-MFD layout
+    return true;
 }
 
 // ==============================================================
 // OPENORBITER MODULE REGISTRATION
 // ==============================================================
-
-DLLCLBK void InitModule(HINSTANCE hModule)
-{
-    // Register the MFD (Critical)
-    Multistage2026_MFD::InitMFD(hModule);
-}
-
 DLLCLBK void ExitModule(HINSTANCE hModule)
 {
-    // Unregister MFD
-    Multistage2026_MFD::ExitMFD(hModule);
+	//Need a proper exit
 }
 
 // OpenOrbiter Vessel Factory (Replaces oapiRegisterVesselClass)
@@ -3345,5 +3598,20 @@ DLLCLBK void ovcExit (VESSEL *vessel)
 
 // Module Date Export
 DLLCLBK const char *ModuleDate () { return __DATE__; }
+
+// --- Linker Satisfaction Stubs ---
+void Multistage2026::VinkaAddStep(char* step) {}
+void Multistage2026::VinkaDeleteStep(int index) {}
+void Multistage2026::WriteGNCFile() {}
+void Multistage2026::GetAttitudeRotLevel(VECTOR3& level) { level = _V(0,0,0); }
+void dummy() {}
+
+double Multistage2026::GetPropellantMass(PROPELLANT_HANDLE hProp) { 
+    return VESSEL::GetPropellantMass(hProp); 
+}
+
+double Multistage2026::GetPropellantMaxMass(PROPELLANT_HANDLE hProp) { 
+    return VESSEL::GetPropellantMaxMass(hProp); 
+}
 
 // --- END OF FILE ---

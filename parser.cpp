@@ -186,7 +186,6 @@ void Multistage2026::parseAdapter(char* filename) {
 // ==============================================================
 // Stage Parsing (The Core Rocket)
 // ==============================================================
-
 void Multistage2026::parseStages(char* filename) {
     CSimpleIniA ini;
     ini.SetUnicode();
@@ -213,30 +212,34 @@ void Multistage2026::parseStages(char* filename) {
             break;
         }
 
-        // 3. Read Basic Parameters
-        stage.at(i).meshname = std::string(ini.GetValue(sectionName, "meshname", ""));
-        stage.at(i).module = std::string(ini.GetValue(sectionName, "module", "Stage"));
-        stage.at(i).off = CharToVec(ini.GetValue(sectionName, "off", "0,0,0"));
-        stage.at(i).speed = CharToVec(ini.GetValue(sectionName, "speed", "0,0,0"));
-        stage.at(i).rot_speed = CharToVec(ini.GetValue(sectionName, "rot_speed", "0,0,0"));
-        stage.at(i).height = ini.GetDoubleValue(sectionName, "height", 0.0);
-        stage.at(i).diameter = ini.GetDoubleValue(sectionName, "diameter", 0.0);
-        stage.at(i).thrust = ini.GetDoubleValue(sectionName, "thrust", 0.0);
-        stage.at(i).emptymass = ini.GetDoubleValue(sectionName, "emptymass", 0.0);
-        stage.at(i).fuelmass = ini.GetDoubleValue(sectionName, "fuelmass", 0.0);
-        stage.at(i).burntime = ini.GetDoubleValue(sectionName, "burntime", 0.0);
-        stage.at(i).ignite_delay = ini.GetDoubleValue(sectionName, "ignite_delay", 0.0);
-        stage.at(i).currDelay = stage.at(i).ignite_delay; // Initialize runtime counter
+        // 3. Read Basic Parameters - Using explicit strncpy with null termination
+        strncpy(stage[i].meshname, ini.GetValue(sectionName, "meshname", ""), 255);
+        stage[i].meshname[255] = '\0';
+        
+        strncpy(stage[i].module, ini.GetValue(sectionName, "module", "Stage"), 255);
+        stage[i].module[255] = '\0';
+
+        stage[i].off = CharToVec(ini.GetValue(sectionName, "off", "0,0,0"));
+        stage[i].speed = CharToVec(ini.GetValue(sectionName, "speed", "0,0,0"));
+        stage[i].rot_speed = CharToVec(ini.GetValue(sectionName, "rot_speed", "0,0,0"));
+        stage[i].height = ini.GetDoubleValue(sectionName, "height", 0.0);
+        stage[i].diameter = ini.GetDoubleValue(sectionName, "diameter", 0.0);
+        stage[i].thrust = ini.GetDoubleValue(sectionName, "thrust", 0.0);
+        stage[i].emptymass = ini.GetDoubleValue(sectionName, "emptymass", 0.0);
+        stage[i].fuelmass = ini.GetDoubleValue(sectionName, "fuelmass", 0.0);
+        stage[i].burntime = ini.GetDoubleValue(sectionName, "burntime", 0.0);
+        stage[i].ignite_delay = ini.GetDoubleValue(sectionName, "ignite_delay", 0.0);
+        stage[i].currDelay = stage[i].ignite_delay; 
 
         // 4. Read Aerodynamics / Control
-        stage.at(i).pitchthrust = 2.0 * ini.GetDoubleValue(sectionName, "pitchthrust", 0.0);
-        if (stage.at(i).pitchthrust == 0) stage.at(i).defpitch = TRUE;
+        stage[i].pitchthrust = 2.0 * ini.GetDoubleValue(sectionName, "pitchthrust", 0.0);
+        stage[i].defpitch = (stage[i].pitchthrust == 0);
 
-        stage.at(i).yawthrust = 2.0 * ini.GetDoubleValue(sectionName, "yawthrust", 0.0);
-        if (stage.at(i).yawthrust == 0) stage.at(i).defyaw = TRUE;
+        stage[i].yawthrust = 2.0 * ini.GetDoubleValue(sectionName, "yawthrust", 0.0);
+        stage[i].defyaw = (stage[i].yawthrust == 0);
 
-        stage.at(i).rollthrust = 2.0 * ini.GetDoubleValue(sectionName, "rollthrust", 0.0);
-        if (stage.at(i).rollthrust == 0) stage.at(i).defroll = TRUE;
+        stage[i].rollthrust = 2.0 * ini.GetDoubleValue(sectionName, "rollthrust", 0.0);
+        stage[i].defroll = (stage[i].rollthrust == 0);
 
         // 5. Read Engines
         int neng = 0;
@@ -244,78 +247,77 @@ void Multistage2026::parseStages(char* filename) {
         for (int e = 0; e < 32; e++) {
             snprintf(engKey, sizeof(engKey), "ENG_%i", e + 1);
             const char* engVal = ini.GetValue(sectionName, engKey, "");
-            if (strlen(engVal) == 0) break; // Stop if no more engines defined
+            if (strlen(engVal) == 0) break; 
 
-            // Parse as Vec4 (x,y,z, throttle_delay) or Vec3
             VECTOR4F ev4 = CharToVec4(engVal);
-            stage.at(i).engV4.at(e) = ev4;
-            stage.at(i).eng[e] = _V(ev4.x, ev4.y, ev4.z);
+            stage[i].engV4[e] = ev4;
+            stage[i].eng[e] = _V(ev4.x, ev4.y, ev4.z);
 
-            // Safety check for throttle delay
-            if ((stage.at(i).engV4.at(e).t <= 0) || (stage.at(i).engV4.at(e).t > 10)) {
-                stage.at(i).engV4.at(e).t = 1.0;
+            if ((stage[i].engV4[e].t <= 0) || (stage[i].engV4[e].t > 10)) {
+                stage[i].engV4[e].t = 1.0;
             }
             neng++;
         }
-        stage.at(i).nEngines = neng;
+        stage[i].nEngines = neng;
 
         // 6. Engine Visuals
-        stage.at(i).eng_diameter = ini.GetDoubleValue(sectionName, "eng_diameter", 0.0);
-        if (stage.at(i).eng_diameter == 0) {
-            stage.at(i).eng_diameter = 0.5 * stage.at(i).diameter;
+        stage[i].eng_diameter = ini.GetDoubleValue(sectionName, "eng_diameter", 0.0);
+        if (stage[i].eng_diameter == 0) {
+            stage[i].eng_diameter = 0.5 * stage[i].diameter;
         }
 
-        stage.at(i).eng_dir = CharToVec(ini.GetValue(sectionName, "eng_dir", "0,0,1"));
-        stage.at(i).eng_tex = std::string(ini.GetValue(sectionName, "eng_tex", ""));
+        stage[i].eng_dir = CharToVec(ini.GetValue(sectionName, "eng_dir", "0,0,1"));
+        
+        strncpy(stage[i].eng_tex, ini.GetValue(sectionName, "eng_tex", ""), 255);
+        stage[i].eng_tex[255] = '\0';
 
         // Particle Streams
-        stage.at(i).eng_pstream1 = std::string(ini.GetValue(sectionName, "eng_pstream1", ""));
-        stage.at(i).wps1 = (stage.at(i).eng_pstream1.length() > 0);
+        strncpy(stage[i].eng_pstream1, ini.GetValue(sectionName, "eng_pstream1", ""), 255);
+        stage[i].eng_pstream1[255] = '\0';
+        stage[i].wps1 = (strlen(stage[i].eng_pstream1) > 0);
 
-        stage.at(i).eng_pstream2 = std::string(ini.GetValue(sectionName, "eng_pstream2", ""));
-        stage.at(i).wps2 = (stage.at(i).eng_pstream2.length() > 0);
+        strncpy(stage[i].eng_pstream2, ini.GetValue(sectionName, "eng_pstream2", ""), 255);
+        stage[i].eng_pstream2[255] = '\0';
+        stage[i].wps2 = (strlen(stage[i].eng_pstream2) > 0);
 
-        stage.at(i).ParticlesPackedToEngine = ini.GetLongValue(sectionName, "particles_packed_to_engine", 0);
-
-        // 7. Advanced Features (Boiloff, Battery, Ullage)
-        stage.at(i).reignitable = ini.GetBoolValue(sectionName, "reignitable", false);
-        stage.at(i).wBoiloff = ini.GetBoolValue(sectionName, "boiloff", false);
+        // 7. Advanced Features
+        stage[i].reignitable = ini.GetBoolValue(sectionName, "reignitable", false);
+        stage[i].wBoiloff = ini.GetBoolValue(sectionName, "boiloff", false);
 
         double batt_hours = ini.GetDoubleValue(sectionName, "battery", 0.0);
         if (batt_hours > 0) {
-            stage.at(i).batteries.wBatts = TRUE;
-            stage.at(i).batteries.MaxCharge = batt_hours * 3600.0;
-            stage.at(i).batteries.CurrentCharge = stage.at(i).batteries.MaxCharge;
+            stage[i].batteries.wBatts = TRUE;
+            stage[i].batteries.MaxCharge = batt_hours * 3600.0;
+            stage[i].batteries.CurrentCharge = stage[i].batteries.MaxCharge;
         } else {
-            stage.at(i).batteries.wBatts = FALSE;
-            stage.at(i).batteries.MaxCharge = 12 * 3600; // Default
+            stage[i].batteries.wBatts = FALSE;
         }
 
         // Ullage Motors
-        stage.at(i).ullage.thrust = ini.GetDoubleValue(sectionName, "ullage_thrust", 0.0);
-        if (stage.at(i).ullage.thrust > 0) {
-            stage.at(i).ullage.wUllage = TRUE;
-            stage.at(i).ullage.anticipation = ini.GetDoubleValue(sectionName, "ullage_anticipation", 0.0);
-            stage.at(i).ullage.overlap = ini.GetDoubleValue(sectionName, "ullage_overlap", 0.0);
-            stage.at(i).ullage.N = ini.GetLongValue(sectionName, "ullage_N", 0);
-            stage.at(i).ullage.angle = ini.GetDoubleValue(sectionName, "ullage_angle", 0.0);
-            stage.at(i).ullage.diameter = ini.GetDoubleValue(sectionName, "ullage_diameter", 0.0);
-            stage.at(i).ullage.length = ini.GetDoubleValue(sectionName, "ullage_length", 0.0);
-            if (stage.at(i).ullage.length == 0) stage.at(i).ullage.length = 10 * stage.at(i).ullage.diameter;
-
-            stage.at(i).ullage.dir = CharToVec(ini.GetValue(sectionName, "ullage_dir", "0,0,1"));
-            stage.at(i).ullage.pos = CharToVec(ini.GetValue(sectionName, "ullage_pos", "0,0,0"));
-            stage.at(i).ullage.tex = std::string(ini.GetValue(sectionName, "ullage_tex", ""));
-            stage.at(i).ullage.rectfactor = ini.GetDoubleValue(sectionName, "ullage_rectfactor", 1.0);
+        stage[i].ullage.thrust = ini.GetDoubleValue(sectionName, "ullage_thrust", 0.0);
+        if (stage[i].ullage.thrust > 0) {
+            stage[i].ullage.wUllage = TRUE;
+            stage[i].ullage.anticipation = ini.GetDoubleValue(sectionName, "ullage_anticipation", 0.0);
+            stage[i].ullage.overlap = ini.GetDoubleValue(sectionName, "ullage_overlap", 0.0);
+            stage[i].ullage.N = ini.GetLongValue(sectionName, "ullage_N", 0);
+            stage[i].ullage.angle = ini.GetDoubleValue(sectionName, "ullage_angle", 0.0);
+            stage[i].ullage.diameter = ini.GetDoubleValue(sectionName, "ullage_diameter", 0.0);
+            stage[i].ullage.length = ini.GetDoubleValue(sectionName, "ullage_length", 0.0);
+            stage[i].ullage.dir = CharToVec(ini.GetValue(sectionName, "ullage_dir", "0,0,1"));
+            stage[i].ullage.pos = CharToVec(ini.GetValue(sectionName, "ullage_pos", "0,0,0"));
+            strncpy(stage[i].ullage.tex, (const char*)ini.GetValue(sectionName, "ullage_tex", ""), 255);
+            stage[i].ullage.tex[255] = '\0';
+            stage[i].ullage.rectfactor = ini.GetDoubleValue(sectionName, "ullage_rectfactor", 1.0);
         }
 
-        // Explosive Bolts (Separation)
-        stage.at(i).expbolt.pos = CharToVec(ini.GetValue(sectionName, "expbolts_pos", "0,0,0"));
-        if (length(stage.at(i).expbolt.pos) > 0) { // If pos is defined
-            stage.at(i).expbolt.wExpbolt = TRUE;
-            stage.at(i).expbolt.pstream = std::string(ini.GetValue(sectionName, "expbolts_pstream", ""));
-            stage.at(i).expbolt.dir = _V(0,0,1);
-            stage.at(i).expbolt.anticipation = ini.GetDoubleValue(sectionName, "expbolts_anticipation", 1.0);
+        // Explosive Bolts
+        stage[i].expbolt.pos = CharToVec(ini.GetValue(sectionName, "expbolts_pos", "0,0,0"));
+        if (length(stage[i].expbolt.pos) > 0) {
+           stage[i].expbolt.wExpbolt = TRUE;
+           strncpy(stage[i].expbolt.pstream, (const char*)ini.GetValue(sectionName, "expbolts_pstream", ""), 255);
+           stage[i].expbolt.pstream[255] = '\0';
+           stage[i].expbolt.dir = _V(0,0,1);
+           stage[i].expbolt.anticipation = ini.GetDoubleValue(sectionName, "expbolts_anticipation", 1.0);
         }
     }
 }
@@ -404,7 +406,8 @@ void Multistage2026::parseBoosters(char* filename) {
         booster.at(b).expbolt.pos = CharToVec(ini.GetValue(sectionName, "expbolts_pos", "0,0,0"));
         if (length(booster.at(b).expbolt.pos) > 0) {
             booster.at(b).expbolt.wExpbolt = TRUE;
-            booster.at(b).expbolt.pstream = std::string(ini.GetValue(sectionName, "expbolts_pstream", ""));
+            strncpy(booster.at(b).expbolt.pstream, (const char*)ini.GetValue(sectionName, "expbolts_pstream", ""), 255);
+            booster.at(b).expbolt.pstream[255] = '\0';
             booster.at(b).expbolt.dir = _V(0,0,1);
             booster.at(b).expbolt.anticipation = ini.GetDoubleValue(sectionName, "expbolts_anticipation", 1.0);
         } else {

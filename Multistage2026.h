@@ -55,6 +55,50 @@
 #include "Orbitersdk.h"
 #include "OrbiterSoundSDK40.h"
 
+// Only define what Orbitersdk.h specifically missed
+typedef uint32_t      DWORD;
+typedef void* HINSTANCE;
+
+#define TLMSECS 600
+#define MAXLEN 256
+#define CM_NOLINE 0
+
+// Handshake & Command IDs
+#define VMSG_MS26_IDENTIFY       0x2015
+#define VMSG_MS26_GETDATA        0x2026
+#define VMSG_MS26_TOGGLE_AP      0x3001
+#define VMSG_MS26_TOGGLE_COMPLEX 0x3002
+#define VMSG_MS26_DELETE_STEP    0x3005
+#define VMSG_MS26_WRITE_GNC      0x3006
+#define VMSG_MS26_ATT_CTRL       0x3007
+#define VMSG_MS26_WRITE_TLM      0x3008
+#define VMSG_MS26_JETTISON_FAI   0x3009
+#define VMSG_MS26_ADD_STEP       0x5001
+#define VMSG_MS26_LOAD_TLM       0x5002
+#define VMSG_MS26_SET_PMC        0x5003
+#define VMSG_MS26_SET_ALT        0x5004
+#define VMSG_MS26_SET_PITCHLIMIT 0x5005
+
+// Data structure for spying
+struct MS26_DATA_INTERFACE {
+    int nStages, currentStage;
+    int nBoosters, currentBooster;
+    int nPayloads, currentPayload;
+    double MET, totalMass;
+    bool APstat, Complex, AttCtrl, runningPeg;
+    int nsteps, tlmidx, loadedtlmlines, NN;
+    double altsteps[4], TgtPitch, TgtHeading, TMeco, GT_IP_Calculated, PegMajorCycleInterval, PegPitchLimit;
+    char name[64];
+    
+    // Arrays must be in the struct for the MFD to see them
+    oapi::IVECTOR2 tlmAlt[TLMSECS], tlmAcc[TLMSECS], tlmVv[TLMSECS], tlmSpeed[TLMSECS], tlmThrust[TLMSECS], tlmPitch[TLMSECS];
+    oapi::IVECTOR2 ReftlmAlt[TLMSECS], ReftlmSpeed[TLMSECS], ReftlmAcc[TLMSECS], ReftlmVv[TLMSECS], ReftlmThrust[TLMSECS], ReftlmPitch[TLMSECS];
+};
+
+
+
+
+
 using namespace std;
 
 // ==============================================================
@@ -95,15 +139,10 @@ typedef int BOOL;
     #define stricmp strcasecmp
     #define strnicmp strncasecmp
     #define GetCurrentDirectory(x,y) getcwd(y,x)
-    
-    // MFD Message Types
-    typedef unsigned long WPARAM;
-    typedef long LPARAM;
 #endif
 
 // --- CONSTANTS ---
 #define MAXLEN 256
-#define TLMSECS 7200 
 #define TBOOSTER 0
 #define TSTAGE 1
 #define TFAIRING 2
@@ -125,7 +164,7 @@ typedef int BOOL;
 #define CM_SPIN 10
 #define CM_INVERSE 11
 #define CM_ENGINEOUT 12
-#define CM_ORBIT 13 
+#define CM_ORBIT 13
 #define CM_DEFAP 14
 #define CM_GLIMIT 15
 #define CM_DESTROY 16
@@ -153,8 +192,30 @@ struct TEX {
     TEX() { for(int i=0;i<50;i++) { TextureName[i][0]='\0'; hTex[i]=NULL; } }
 };
 
+struct EXPBOLT {
+    bool wExpbolt;
+    THRUSTER_HANDLE threxp_h;
+    VECTOR3 pos, dir;
+    char pstream[256];
+    double anticipation;
+    EXPBOLT() {
+        memset(this, 0, sizeof(EXPBOLT));
+        anticipation = 1.0; 
+    }
+};
+
+struct ULLAGE {
+    bool wUllage;
+    bool ignited;
+    THRUSTER_HANDLE th_ullage;
+    double thrust, anticipation, overlap, angle, diameter, length, rectfactor;
+    int N;
+    VECTOR3 dir, pos;
+    char tex[256];
+    ULLAGE() { memset(this, 0, sizeof(ULLAGE)); }
+};
+
 struct BATTS { bool wBatts; double MaxCharge; double CurrentCharge; BATTS() { wBatts=FALSE; MaxCharge=0; CurrentCharge=0; } };
-struct EXPBOLT { VECTOR3 pos, dir; string pstream; double anticipation; bool wExpbolt; THRUSTER_HANDLE threxp_h; EXPBOLT() { threxp_h=nullptr; pos=_V(0,0,0); dir=_V(0,0,0); anticipation=0; wExpbolt=FALSE; } };
 struct MISC { double COG; int GNC_Debug; bool telemetry; int Focus; bool thrustrealpos; double VerticalAngle; double drag_factor; char PadModule[MAXLEN]; MISC() { COG=0; GNC_Debug=0; telemetry=FALSE; Focus=0; thrustrealpos=FALSE; VerticalAngle=0; drag_factor=0; PadModule[0]='\0'; } };
 struct PARTICLE { char ParticleName[MAXLEN]; PARTICLESTREAMSPEC Pss; double GrowFactor_size, GrowFactor_rate; bool Growing; char TexName[256]; PARTICLE() { ParticleName[0]='\0'; GrowFactor_size=0; GrowFactor_rate=0; Growing=FALSE; TexName[0]='\0'; memset(&Pss,0,sizeof(Pss)); } };
 struct PSGROWING { PSTREAM_HANDLE psh[3]; PARTICLESTREAMSPEC pss; double GrowFactor_size, GrowFactor_rate; THRUSTER_HANDLE th; VECTOR3 pos; bool growing; int status; bool counting; double doublepstime; double basesize, baserate; VECTOR3 basepos; bool ToBooster; int nItem, nEngine; bool FirstLoop; PSGROWING() { memset(&pss,0,sizeof(pss)); psh[0]=0; psh[1]=0; psh[2]=0; GrowFactor_size=0; GrowFactor_rate=0; th=NULL; pos=_V(0,0,0); growing=FALSE; status=0; counting=FALSE; doublepstime=0; basesize=0; baserate=0; basepos=_V(0,0,0); ToBooster=FALSE; nItem=0; nEngine=0; FirstLoop=TRUE; } };
@@ -176,29 +237,50 @@ struct BOOSTER {
     BOOSTER() { isp=0; currDelay=0; Thg_boosters_h=nullptr; IgnitionTime=0; volume=0; th_booster_h.fill(nullptr); tank=nullptr; msh_idh.fill(0); msh_h.fill({}); N=0; wps1=FALSE; wps2=FALSE; off=_V(0,0,0); height=0; diameter=0; thrust=0; emptymass=0; fuelmass=0; burntime=0; angle=0; burndelay=0; speed=_V(0,0,0); rot_speed=_V(0,0,0); for(int i=0;i<4;i++) eng[i]=_V(0,0,0); for(int j=0;j<32;j++){ engine_phase[j]=0; engine_amp[j]=0; freq[j]=0; } eng_diameter=0; eng_dir=_V(0,0,0); Ignited=FALSE; PSSdefined=FALSE; nEngines=0; for(int k=0;k<10;k++) curve[k]=_V(9000000,100,0); ParticlesPacked=FALSE; ParticlesPackedToEngine=0; expbolt=EXPBOLT(); module="Stage"; }
 };
 
-struct ULLAGE { bool wUllage, ignited; double thrust, anticipation, overlap; int N; double angle; VECTOR3 pos, dir; double length, diameter; string tex; THRUSTER_HANDLE th_ullage; double rectfactor; ULLAGE() { wUllage=FALSE; ignited=FALSE; thrust=0; anticipation=0; overlap=0; N=0; angle=0; pos=_V(0,0,0); dir=_V(0,0,0); length=0; diameter=0; rectfactor=0; } };
 struct INTERSTAGE { string meshname; VECTOR3 off; double height, diameter, emptymass; string module; VECTOR3 speed, rot_speed; double separation_delay; double currDelay; MESHHANDLE msh_h; int msh_idh; double volume; INTERSTAGE() { meshname=""; off=_V(0,0,0); height=0; diameter=0; emptymass=0; module=""; speed=_V(0,0,0); rot_speed=_V(0,0,0); separation_delay=0; currDelay=0; msh_h=NULL; msh_idh=0; volume=0; } };
+
 struct STAGE {
-    string meshname; VECTOR3 off; double height, diameter, thrust, emptymass, fuelmass, burntime, isp;
+    char meshname[256];
+    VECTOR3 off; 
+    double height, diameter, thrust, emptymass, fuelmass, burntime, isp;
     bool wps1, wps2;
-    int nEngines; VECTOR3 eng[32]; double engine_phase[32], engine_amp[32], freq[32]; array<VECTOR4F, 32> engV4;
-    double eng_diameter; VECTOR3 eng_dir; string eng_tex, eng_pstream1, eng_pstream2;
-    string module; VECTOR3 speed, rot_speed;
-    BATTS batteries; double ignite_delay;
-    double pitchthrust, rollthrust, yawthrust; bool defpitch, defyaw, defroll;
+    int nEngines; 
+    VECTOR3 eng[32]; 
+    double engine_phase[32], engine_amp[32], freq[32]; 
+    array<VECTOR4F, 32> engV4;
+    double eng_diameter; 
+    VECTOR3 eng_dir; 
+    char eng_tex[256], eng_pstream1[256], eng_pstream2[256], module[256];
+    VECTOR3 speed, rot_speed;
+    BATTS batteries; 
+    double ignite_delay;
+    double pitchthrust, rollthrust, yawthrust; 
+    bool defpitch, defyaw, defroll;
     double linearthrust, linearisp;
     ULLAGE ullage; EXPBOLT expbolt;
-    bool Ignited, reignitable, DenyIgnition, wBoiloff; int StageState;
+    bool Ignited, reignitable, DenyIgnition, wBoiloff; 
+    int StageState;
     double currDelay, IgnitionTime, volume, IntIncremental;
-    double ispref, pref; 
+    double ispref, pref;
     bool ParticlesPacked; int ParticlesPackedToEngine;
-    bool wInter; INTERSTAGE interstage;
-    vector<THRUSTER_HANDLE> th_main_h; THGROUP_HANDLE thg_main_h; PROPELLANT_HANDLE tank;
-    vector<THRUSTER_HANDLE> th_att_h; 
+    bool wInter;
+    INTERSTAGE interstage;
+    THRUSTER_HANDLE th_main_h[32];
+    THRUSTER_HANDLE th_att_h[32];
+    THGROUP_HANDLE thg_main_h;
+    PROPELLANT_HANDLE tank;
     MESHHANDLE msh_h; int msh_idh;
-    double waitforreignition; 
-    STAGE() { wps1=FALSE; wps2=FALSE; off=_V(0,0,0); height=0; diameter=0; thrust=0; emptymass=0; fuelmass=0; burntime=0; batteries=BATTS(); ignite_delay=0; speed=_V(0,0,0); rot_speed=_V(0,0,0); pitchthrust=0; rollthrust=0; yawthrust=0; defpitch=FALSE; defyaw=FALSE; defroll=FALSE; for(int j=0;j<32;j++) { eng[j]=_V(0,0,0); engine_phase[j]=0; engine_amp[j]=0; freq[j]=0; engV4[j]=VECTOR4F(); } eng_diameter=0; eng_dir=_V(0,0,0); ullage=ULLAGE(); expbolt=EXPBOLT(); isp=0; volume=0; nEngines=0; wInter=FALSE; IntIncremental=0; interstage=INTERSTAGE(); Ignited=FALSE; currDelay=0; IgnitionTime=0; reignitable=TRUE; DenyIgnition=FALSE; wBoiloff=FALSE; StageState=0; ParticlesPacked=FALSE; ParticlesPackedToEngine=0; linearthrust=0; linearisp=0; ispref=0; pref=0; thg_main_h=NULL; tank=NULL; msh_h=NULL; msh_idh=0; waitforreignition=0; th_att_h.resize(2); }
+    double waitforreignition;
+    STAGE() {
+        // 1. Zero out the entire 3.5KB block in one CPU cycle
+        memset(this, 0, sizeof(STAGE));
+        // 2. Set specific non-zero defaults
+        reignitable = TRUE;
+        // Note: off, eng[j], speed, etc., are already (0,0,0) thanks to memset.
+        // th_att_h.resize(2) is REMOVED because it's now a fixed array.
+    }
 };
+
 struct PAYLOAD { string meshname, meshname0, meshname1, meshname2, meshname3, meshname4; array<VECTOR3, 5> off; double height, diameter, mass; string module, name; char MultiOffset[128]; VECTOR3 speed, rot_speed; double volume; int render, nMeshes; MESHHANDLE msh_h[5]; int msh_idh[5]; VECTOR3 Rotation; bool rotated, live; PAYLOAD() { for(int i=0;i<5;i++){ off[i]=_V(0,0,0); msh_h[i]=NULL; msh_idh[i]=0; } height=0; diameter=0; mass=0; module=""; name=""; MultiOffset[0]='\0'; speed=_V(0,0,0); rot_speed=_V(0,0,0); volume=0; render=0; nMeshes=0; Rotation=_V(0,0,0); rotated=FALSE; live=FALSE; } };
 struct FAIRING { string meshname; VECTOR3 off; double height, diameter, emptymass; int N; double angle; string module; VECTOR3 speed, rot_speed; MESHHANDLE msh_h[4]; int msh_idh[4]; double volume; FAIRING() { meshname=""; off=_V(0,0,0); height=0; diameter=0; emptymass=0; N=0; angle=0; module=""; speed=_V(0,0,0); rot_speed=_V(0,0,0); for(int i=0;i<4;i++){msh_h[i]=NULL; msh_idh[i]=0;} volume=0;} };
 struct LES { string meshname; VECTOR3 off; double height, diameter, emptymass; string module; VECTOR3 speed, rot_speed; MESHHANDLE msh_h; int msh_idh; double volume; LES() { meshname=""; off=_V(0,0,0); height=0; diameter=0; emptymass=0; module=""; speed=_V(0,0,0); rot_speed=_V(0,0,0); msh_h=NULL; msh_idh=0; volume=0;} };
@@ -216,6 +298,7 @@ public:
     ~Multistage2026();
 
     // Callbacks
+    bool bVesselInitialized;
     void clbkSetClassCaps(FILEHANDLE cfg) override;
     void clbkPostStep(double simt, double simdt, double mjd) override;
     void clbkPreStep(double simt, double simdt, double mjd) override;
@@ -228,7 +311,12 @@ public:
 
     void clbkPostCreation() override;
     int clbkGeneric(int msgid, int prm, void *context) override;
+    virtual bool clbkLoadGenericCockpit();
+
+#ifdef _DEBUG_HUD
     bool clbkDrawHUD(int mode, const HUDPAINTSPEC *hps, oapi::Sketchpad *skp) override;
+#endif
+
     void clbkVisualCreated(VISHANDLE vis, int refcount) override;
     void clbkVisualDestroyed(VISHANDLE vis, int refcount) override;
     int clbkConsumeDirectKey(char* kstate) override;
@@ -528,8 +616,6 @@ public:
     ATTACHMENTHANDLE padramp;
     OBJHANDLE hCrawler; 
     OBJHANDLE hramp; 
-    
-    friend class Multistage2026_MFD;
     
     void ManageParticles(double dt, bool prestep);
     void parseTelemetryFile(char* name);

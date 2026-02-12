@@ -1,22 +1,22 @@
-cmake_minimum_required(VERSION 3.10)
-project(Multistage2026)
+# Multistage2026 - Integration with Global Build Chain
 
-# ==============================================================================
-# Global Settings
-# ==============================================================================
+# 1. Define the library target
+add_library(Multistage2026 SHARED Multistage2026.cpp)
 
-# Use C++17
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON) # Required for Linux .so
+# 2. Point to the global Include directories
+target_include_directories(Multistage2026 PRIVATE 
+    ${ORBITER_SOURCE_SDK_INCLUDE_DIR}
+    ${CMAKE_SOURCE_DIR}/Extern/simpleini # Assuming the standard OpenOrbiter path
+    ${VESSEL_COMMON_DIR}
+)
 
-# Output Directory: Put the .so files in the main Modules folder
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/Modules)
+# 3. Link against the SDK and core libraries
+target_link_libraries(Multistage2026 PRIVATE 
+    Orbitersdk 
+    # Add any other core libs here if needed
+)
 
-# ==============================================================================
-# Subdirectories
-# ==============================================================================
-
-# This tells CMake to go look inside the sources folder for more instructions
-add_subdirectory(sources)
-
+# 4. Handle your Debug HUD toggle
+if(DEBUG_HUD)
+    target_compile_definitions(Multistage2026 PRIVATE _DEBUG_HUD)
+endif()
