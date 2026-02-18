@@ -1,7 +1,13 @@
 # Multistage2026 - Integration with Global Build Chain
 
 # 1. Define the library target
-add_library(Multistage2026 SHARED Multistage2026.cpp)
+add_library(Multistage2026 SHARED 
+    Multistage2026.cpp
+    parser.cpp
+    peg.cpp
+    Particles.cpp
+    Guidance.cpp
+)
 
 # 2. Point to the global Include directories
 target_include_directories(Multistage2026 PRIVATE 

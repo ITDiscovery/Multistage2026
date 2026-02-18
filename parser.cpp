@@ -39,7 +39,7 @@
 #include <string>
 #include <vector>
 #include "Multistage2026.h"
-#include "SimpleIni.h" // Ensure this path matches your project structure
+#include "simpleini/SimpleIni.h" // Linux method to read ini files
 
 // Helper to convert "x,y,z" strings from INI to VECTOR3
 // (Assuming this helper exists in your project, if not we can add it)
@@ -49,11 +49,15 @@ extern VECTOR4 CharToVec4(const std::string& str);
 // ==============================================================
 // String Parsing Helpers
 // ==============================================================
-
 VECTOR3 CharToVec(const std::string& str) {
     VECTOR3 v = {0,0,0};
     if (str.empty()) return v;
-    sscanf(str.c_str(), "%lf,%lf,%lf", &v.x, &v.y, &v.z);
+    // Linux safety: Remove ( and ) before parsing
+    std::string clean = str;
+    clean.erase(std::remove(clean.begin(), clean.end(), '('), clean.end());
+    clean.erase(std::remove(clean.begin(), clean.end(), ')'), clean.end());
+    // Now sscanf can find the numbers regardless of the original formatting
+    sscanf(clean.c_str(), "%lf,%lf,%lf", &v.x, &v.y, &v.z);
     return v;
 }
 
@@ -70,7 +74,6 @@ VECTOR4F Multistage2026::CharToVec4(const std::string& str)
 // ==============================================================
 // Interstage Parsing
 // ==============================================================
-
 void Multistage2026::parseInterstages(char* filename, int parsingstage) {
     CSimpleIniA ini;
     ini.SetUnicode();
@@ -114,72 +117,11 @@ void Multistage2026::parseInterstages(char* filename, int parsingstage) {
         stage.at(parsingstage).interstage.currDelay = stage.at(parsingstage).interstage.separation_delay;
 
         nInterstages++;
-        oapiWriteLogV("%s: Interstage found for Stage %i (Mesh: %s)", GetName(), parsingstage + 1, meshname);
-    }
-}
-
-// ==============================================================
-// Launch Escape System (LES) Parsing
-// ==============================================================
-
-void Multistage2026::parseLes(char* filename) {
-    CSimpleIniA ini;
-    ini.SetUnicode();
-    if (ini.LoadFile(filename) < 0) return;
-
-    const char* sectionName = "LES";
-
-    if (!ini.GetSection(sectionName)) return;
-
-    const char* meshname = ini.GetValue(sectionName, "meshname", "");
-    if (strlen(meshname) > 0) {
-        wLes = TRUE;
-        Les.meshname = std::string(meshname);
-        Les.module = ini.GetValue(sectionName, "module", "Stage");
-
-        Les.off = CharToVec(ini.GetValue(sectionName, "off", "0,0,0"));
-        Les.speed = CharToVec(ini.GetValue(sectionName, "speed", "0,0,0"));
-        Les.rot_speed = CharToVec(ini.GetValue(sectionName, "rot_speed", "0,0,0"));
-
-        Les.height = ini.GetDoubleValue(sectionName, "height", 0.0);
-        Les.diameter = ini.GetDoubleValue(sectionName, "diameter", 0.0);
-        Les.emptymass = ini.GetDoubleValue(sectionName, "emptymass", 0.0);
-
-        oapiWriteLogV("%s: LES System Found (Mesh: %s)", GetName(), meshname);
-    }
-}
-
-// ==============================================================
-// Adapter Parsing
-// ==============================================================
-
-void Multistage2026::parseAdapter(char* filename) {
-    CSimpleIniA ini;
-    ini.SetUnicode();
-    if (ini.LoadFile(filename) < 0) return;
-
-    // Adapters can be named "SEPARATION_N-N+1" (top stage) or just "ADAPTER"
-    char sectionName[64];
-    snprintf(sectionName, sizeof(sectionName), "SEPARATION_%i-%i", nStages, nStages + 1);
-
-    const char* meshname = ini.GetValue(sectionName, "meshname", "");
-
-    // Fallback check
-    if (strlen(meshname) == 0) {
-        strcpy(sectionName, "ADAPTER");
-        meshname = ini.GetValue(sectionName, "meshname", "");
-    }
-
-    if (strlen(meshname) > 0) {
-        wAdapter = TRUE;
-        Adapter.meshname = std::string(meshname);
-
-        Adapter.off = CharToVec(ini.GetValue(sectionName, "off", "0,0,0")); 
-        Adapter.height = ini.GetDoubleValue(sectionName, "height", 0.0); 
-        Adapter.diameter = ini.GetDoubleValue(sectionName, "diameter", 0.0); 
-        Adapter.emptymass = ini.GetDoubleValue(sectionName, "emptymass", 0.0);
-
-        oapiWriteLogV("%s: Adapter Found (Mesh: %s)", GetName(), meshname);
+        // --- PHASE 1 DEBUG: INTERSTAGE ---
+        oapiWriteLogV("PARSER: Interstage %d | Mesh: %s | Offset Z: %.3f",
+            parsingstage + 1, meshname,stage.at(parsingstage).interstage.off.z
+        );
+        // ---------------------------------
     }
 }
 
@@ -208,14 +150,14 @@ void Multistage2026::parseStages(char* filename) {
         // If section doesn't exist, we assume we've reached the end of the rocket
         if (!ini.GetSection(sectionName)) {
             nStages = i;
-            oapiWriteLogV("%s: Config loaded. Total Stages found: %i", GetName(), nStages);
+            oapiWriteLogV("PARSER: %s Config loaded. Total Stages found: %i", GetName(), nStages);
             break;
         }
 
         // 3. Read Basic Parameters - Using explicit strncpy with null termination
         strncpy(stage[i].meshname, ini.GetValue(sectionName, "meshname", ""), 255);
         stage[i].meshname[255] = '\0';
-        
+
         strncpy(stage[i].module, ini.GetValue(sectionName, "module", "Stage"), 255);
         stage[i].module[255] = '\0';
 
@@ -241,21 +183,28 @@ void Multistage2026::parseStages(char* filename) {
         stage[i].rollthrust = 2.0 * ini.GetDoubleValue(sectionName, "rollthrust", 0.0);
         stage[i].defroll = (stage[i].rollthrust == 0);
 
-        // 5. Read Engines
+        // 5. Read Engines - Hardened for Linux Case Sensitivity
         int neng = 0;
         char engKey[32];
         for (int e = 0; e < 32; e++) {
-            snprintf(engKey, sizeof(engKey), "ENG_%i", e + 1);
+            // Check for both cases explicitly to prevent "0 Engines Found" errors
+            snprintf(engKey, sizeof(engKey), "eng_%i", e + 1);
             const char* engVal = ini.GetValue(sectionName, engKey, "");
-            if (strlen(engVal) == 0) break; 
 
-            VECTOR4F ev4 = CharToVec4(engVal);
-            stage[i].engV4[e] = ev4;
-            stage[i].eng[e] = _V(ev4.x, ev4.y, ev4.z);
-
-            if ((stage[i].engV4[e].t <= 0) || (stage[i].engV4[e].t > 10)) {
-                stage[i].engV4[e].t = 1.0;
+            if (strlen(engVal) == 0) {
+                snprintf(engKey, sizeof(engKey), "ENG_%i", e + 1);
+                engVal = ini.GetValue(sectionName, engKey, "");
             }
+
+            if (strlen(engVal) == 0) break;
+
+            // Use the verified CharToVec to clean up formatting
+            stage[i].eng[e] = CharToVec(engVal);
+
+            // --- PHASE 1 DEBUG: STAGE ---
+            oapiWriteLogV("PARSER: Stage %d Configured | eng_off %d X,Y,Z: (%.3f, %.3f, %.3f)", 
+            i + 1,e + 1, stage[i].eng[e].x,stage[i].eng[e].y, stage[i].eng[e].z);
+            // ----------------------------
             neng++;
         }
         stage[i].nEngines = neng;
@@ -267,7 +216,6 @@ void Multistage2026::parseStages(char* filename) {
         }
 
         stage[i].eng_dir = CharToVec(ini.GetValue(sectionName, "eng_dir", "0,0,1"));
-        
         strncpy(stage[i].eng_tex, ini.GetValue(sectionName, "eng_tex", ""), 255);
         stage[i].eng_tex[255] = '\0';
 
@@ -319,13 +267,16 @@ void Multistage2026::parseStages(char* filename) {
            stage[i].expbolt.dir = _V(0,0,1);
            stage[i].expbolt.anticipation = ini.GetDoubleValue(sectionName, "expbolts_anticipation", 1.0);
         }
+        // --- PHASE 1 DEBUG: STAGE ---
+        oapiWriteLogV("PARSER: Stage %d Configured | Mesh: %s | Offset Z: %.3f", 
+            i + 1, stage[i].meshname, stage[i].off.z);
+        // ----------------------------
     }
 }
 
 // ==============================================================
 // Booster Parsing
 // ==============================================================
-
 void Multistage2026::parseBoosters(char* filename) {
     CSimpleIniA ini;
     ini.SetUnicode();
@@ -345,7 +296,7 @@ void Multistage2026::parseBoosters(char* filename) {
         // Check if section exists
         if (!ini.GetSection(sectionName)) {
             nBoosters = b;
-            oapiWriteLogV("%s: Config loaded. Total Booster Groups: %i", GetName(), nBoosters);
+            oapiWriteLogV("PARSER %s Config loaded. Total Booster Groups: %i", GetName(), nBoosters);
             break;
         }
 
@@ -366,13 +317,18 @@ void Multistage2026::parseBoosters(char* filename) {
         booster.at(b).burndelay = ini.GetDoubleValue(sectionName, "burndelay", 0.0);
         booster.at(b).currDelay = booster.at(b).burndelay; // Initialize runtime delay
 
+        // --- CRITICAL DEBUG: CAPTURE MESH OFFSET ---
+        oapiWriteLogV("PARSER: Booster Group %d INI Read -> Offset (X,Y,Z): (%.3f, %.3f, %.3f)", 
+            b + 1, booster.at(b).off.x, booster.at(b).off.y, booster.at(b).off.z);
+        // -------------------------------------------
+
         // 2. Engines & Visuals
         booster.at(b).eng_diameter = ini.GetDoubleValue(sectionName, "eng_diameter", 0.5);
         booster.at(b).eng_tex = std::string(ini.GetValue(sectionName, "eng_tex", ""));
         booster.at(b).eng_dir = CharToVec(ini.GetValue(sectionName, "eng_dir", "0,0,1"));
 
-        // Booster Engine Offset Loop
-        for (int nbeng = 0; nbeng < 5; nbeng++) {
+        // Booster Engine Offset Loop - 32 Engine Limit for Falcon Heavy
+        for (int nbeng = 0; nbeng < 32; nbeng++) {
             char engKey[32];
             snprintf(engKey, sizeof(engKey), "ENG_%i", nbeng + 1);
             const char* val = ini.GetValue(sectionName, engKey, "");
@@ -415,6 +371,73 @@ void Multistage2026::parseBoosters(char* filename) {
         }
     }
 }
+// ==============================================================
+// Payload Parsing
+// ==============================================================
+void Multistage2026::parsePayload(char* filename) {
+    CSimpleIniA ini;
+    ini.SetUnicode();
+    if (ini.LoadFile(filename) < 0) {
+        oapiWriteLogV("%s: Error loading INI file in parsePayload: %s", GetName(), filename);
+        return;
+    }
+
+    char sectionName[64];
+
+    // Iterate through Payloads (Limit 10)
+    for (int pnl = 0; pnl < 10; pnl++) {
+        snprintf(sectionName, sizeof(sectionName), "PAYLOAD_%i", pnl + 1);
+
+        if (!ini.GetSection(sectionName)) {
+            nPayloads = pnl;
+            oapiWriteLogV("PARSER %s Config loaded. Total Payloads: %i", GetName(), nPayloads);
+            break;
+        }
+
+        // 1. Mesh Parsing (Handles multiple meshes separated by ;)
+        std::string meshlist = std::string(ini.GetValue(sectionName, "meshname", ""));
+        if (meshlist.length() > 0) {
+            ArrangePayloadMeshes(meshlist, pnl);
+            // 2. Offsets (Matches the mesh count)
+            std::string offlist = std::string(ini.GetValue(sectionName, "off", "0,0,0"));
+            ArrangePayloadOffsets(offlist, pnl);
+            payload.at(pnl).meshname = meshlist; // Store full string for reference
+
+            // SAFETY CHECK: Only print if the vector actually has data
+            if (!payload.at(pnl).off.empty()) {
+                oapiWriteLogV("PARSER: Payload %d Configured | Mesh: %s | X,Y,Z: (%.3f , %.3f , %.3f)",
+                    pnl + 1, payload.at(pnl).meshname.c_str(),payload.at(pnl).off[0].x,
+                   payload.at(pnl).off[0].y, payload.at(pnl).off[0].z);
+            } else {
+                oapiWriteLogV("PARSER: Payload %d Configured | WARNING: No Offset Found!", pnl + 1);
+            }
+        } else {
+            payload.at(pnl).nMeshes = 0;
+        }
+
+        // 3. Physical Parameters
+        payload.at(pnl).name = std::string(ini.GetValue(sectionName, "name", "Payload"));
+        payload.at(pnl).module = std::string(ini.GetValue(sectionName, "module", "Stage"));
+        payload.at(pnl).mass = ini.GetDoubleValue(sectionName, "mass", 0.0);
+        payload.at(pnl).diameter = ini.GetDoubleValue(sectionName, "diameter", 0.0);
+        payload.at(pnl).height = ini.GetDoubleValue(sectionName, "height", 0.0);
+        // 4. Motion Parameters
+        payload.at(pnl).speed = CharToVec(ini.GetValue(sectionName, "speed", "0,0,0"));
+        payload.at(pnl).rot_speed = CharToVec(ini.GetValue(sectionName, "rot_speed", "0,0,0"));
+        // Rotation (Orientation on stack)
+        VECTOR3 rotDeg = CharToVec(ini.GetValue(sectionName, "rotation", "0,0,0"));
+        payload.at(pnl).Rotation = operator*(rotDeg, RAD); // Convert to Radians
+        payload.at(pnl).rotated = (length(payload.at(pnl).Rotation) > 0);
+
+        // 5. Render & Logic Flags
+        payload.at(pnl).render = ini.GetLongValue(sectionName, "render", 0);
+        if (payload.at(pnl).render != 1) payload.at(pnl).render = 0;
+
+        int liveVal = ini.GetLongValue(sectionName, "live", 0);
+        payload.at(pnl).live = (liveVal == 1);
+    }
+
+}
 
 // ==============================================================
 // Payload Helpers
@@ -454,66 +477,79 @@ void Multistage2026::ArrangePayloadOffsets(std::string data, int pnl) {
         count++;
     }
 }
+// ==============================================================
+// Launch Escape System (LES) Parsing
+// ==============================================================
 
-void Multistage2026::parsePayload(char* filename) {
+void Multistage2026::parseLes(char* filename) {
     CSimpleIniA ini;
     ini.SetUnicode();
-    if (ini.LoadFile(filename) < 0) {
-        oapiWriteLogV("%s: Error loading INI file in parsePayload: %s", GetName(), filename);
-        return;
+    if (ini.LoadFile(filename) < 0) return;
+
+    const char* sectionName = "LES";
+
+    if (!ini.GetSection(sectionName)) return;
+
+    const char* meshname = ini.GetValue(sectionName, "meshname", "");
+    if (strlen(meshname) > 0) {
+        wLes = TRUE;
+        Les.meshname = std::string(meshname);
+        Les.module = ini.GetValue(sectionName, "module", "Stage");
+
+        Les.off = CharToVec(ini.GetValue(sectionName, "off", "0,0,0"));
+        Les.speed = CharToVec(ini.GetValue(sectionName, "speed", "0,0,0"));
+        Les.rot_speed = CharToVec(ini.GetValue(sectionName, "rot_speed", "0,0,0"));
+
+        Les.height = ini.GetDoubleValue(sectionName, "height", 0.0);
+        Les.diameter = ini.GetDoubleValue(sectionName, "diameter", 0.0);
+        Les.emptymass = ini.GetDoubleValue(sectionName, "emptymass", 0.0);
+
+        // --- PHASE 1 DEBUG: LES ---
+        oapiWriteLogV("PARSER: LES System Configured | Mesh: %s | X,Y,Z: (%.3f, %.3f, %.3f)",
+           meshname, Les.off.x, Les.off.y, Les.off.z);
+        // --------------------------
+    }
+}
+
+// ==============================================================
+// Adapter Parsing
+// ==============================================================
+void Multistage2026::parseAdapter(char* filename) {
+    CSimpleIniA ini;
+    ini.SetUnicode();
+    if (ini.LoadFile(filename) < 0) return;
+
+    // Adapters can be named "SEPARATION_N-N+1" (top stage) or just "ADAPTER"
+    char sectionName[64];
+    snprintf(sectionName, sizeof(sectionName), "SEPARATION_%i-%i", nStages, nStages + 1);
+
+    const char* meshname = ini.GetValue(sectionName, "meshname", "");
+
+    // Fallback check
+    if (strlen(meshname) == 0) {
+        strcpy(sectionName, "ADAPTER");
+        meshname = ini.GetValue(sectionName, "meshname", "");
     }
 
-    char sectionName[64];
+    if (strlen(meshname) > 0) {
+        wAdapter = TRUE;
+        Adapter.meshname = std::string(meshname);
 
-    // Iterate through Payloads (Limit 10)
-    for (int pnl = 0; pnl < 10; pnl++) {
-        snprintf(sectionName, sizeof(sectionName), "PAYLOAD_%i", pnl + 1);
+        Adapter.off = CharToVec(ini.GetValue(sectionName, "off", "0,0,0")); 
+        Adapter.height = ini.GetDoubleValue(sectionName, "height", 0.0); 
+        Adapter.diameter = ini.GetDoubleValue(sectionName, "diameter", 0.0); 
+        Adapter.emptymass = ini.GetDoubleValue(sectionName, "emptymass", 0.0);
 
-        if (!ini.GetSection(sectionName)) {
-            nPayloads = pnl;
-            oapiWriteLogV("%s: Config loaded. Total Payloads: %i", GetName(), nPayloads);
-            break;
-        }
-
-        // 1. Mesh Parsing (Handles multiple meshes separated by ;)
-        std::string meshlist = std::string(ini.GetValue(sectionName, "meshname", ""));
-        if (meshlist.length() > 0) {
-            ArrangePayloadMeshes(meshlist, pnl);
-            // 2. Offsets (Matches the mesh count)
-            std::string offlist = std::string(ini.GetValue(sectionName, "off", "0,0,0"));
-            ArrangePayloadOffsets(offlist, pnl);
-            payload.at(pnl).meshname = meshlist; // Store full string for reference
-        } else {
-            payload.at(pnl).nMeshes = 0;
-        }
-
-        // 3. Physical Parameters
-        payload.at(pnl).name = std::string(ini.GetValue(sectionName, "name", "Payload"));
-        payload.at(pnl).module = std::string(ini.GetValue(sectionName, "module", "Stage"));
-        payload.at(pnl).mass = ini.GetDoubleValue(sectionName, "mass", 0.0);
-        payload.at(pnl).diameter = ini.GetDoubleValue(sectionName, "diameter", 0.0);
-        payload.at(pnl).height = ini.GetDoubleValue(sectionName, "height", 0.0);
-        // 4. Motion Parameters
-        payload.at(pnl).speed = CharToVec(ini.GetValue(sectionName, "speed", "0,0,0"));
-        payload.at(pnl).rot_speed = CharToVec(ini.GetValue(sectionName, "rot_speed", "0,0,0"));
-        // Rotation (Orientation on stack)
-        VECTOR3 rotDeg = CharToVec(ini.GetValue(sectionName, "rotation", "0,0,0"));
-        payload.at(pnl).Rotation = operator*(rotDeg, RAD); // Convert to Radians
-        payload.at(pnl).rotated = (length(payload.at(pnl).Rotation) > 0);
-
-        // 5. Render & Logic Flags
-        payload.at(pnl).render = ini.GetLongValue(sectionName, "render", 0);
-        if (payload.at(pnl).render != 1) payload.at(pnl).render = 0;
-
-        int liveVal = ini.GetLongValue(sectionName, "live", 0);
-        payload.at(pnl).live = (liveVal == 1);
+        // --- PHASE 1 DEBUG: LES ---
+        oapiWriteLogV("PARSER: Adpater System Configured | Mesh: %s | X,Y,Z: (%.3f, %.3f, %.3f)",
+           meshname, Adapter.off.x, Adapter.off.y, Adapter.off.z);
+        // --------------------------
     }
 }
 
 // ==============================================================
 // Fairing Parsing
 // ==============================================================
-
 void Multistage2026::parseFairing(char* filename) {
     CSimpleIniA ini;
     ini.SetUnicode();
@@ -530,8 +566,10 @@ void Multistage2026::parseFairing(char* filename) {
 
     if (fairing.N > 0) {
         hasFairing = true;
+        // Standard String/Vector Parsing
         fairing.meshname = std::string(ini.GetValue(sectionName, "meshname", ""));
         fairing.module = std::string(ini.GetValue(sectionName, "module", "Stage"));
+        // --- PHASE 1 DEBUG: CAPTURE THE OFFSET ---
         fairing.off = CharToVec(ini.GetValue(sectionName, "off", "0,0,0"));
         fairing.speed = CharToVec(ini.GetValue(sectionName, "speed", "0,-3,0"));
         fairing.rot_speed = CharToVec(ini.GetValue(sectionName, "rot_speed", "0,0,0"));
@@ -539,9 +577,56 @@ void Multistage2026::parseFairing(char* filename) {
         fairing.diameter = ini.GetDoubleValue(sectionName, "diameter", 0.0);
         fairing.angle = ini.GetDoubleValue(sectionName, "angle", 0.0);
         fairing.emptymass = ini.GetDoubleValue(sectionName, "emptymass", 0.0);
-        oapiWriteLogV("%s: Fairing Configured. N=%i Mesh=%s", GetName(), fairing.N, fairing.meshname.c_str());
+
+        // --- IMPROVED LOGGING ---
+        oapiWriteLogV("PARSER: Fairing Configured | N=%i Mesh=%s | X,Y,Z: (%.3f, %.3f, %.3f)",
+            fairing.N, fairing.meshname.c_str(),fairing.off.x, fairing.off.y,fairing.off.z);
     } else {
         hasFairing = false;
+    }
+}
+
+// ==============================================================
+// Misc Parse
+// ==============================================================
+void Multistage2026::parseMisc(char* filename) {
+    CSimpleIniA ini;
+    ini.SetUnicode();
+    if (ini.LoadFile(filename) < 0) return;
+
+    const char* sectionName = "MISC";
+    if (!ini.GetSection(sectionName)) return;
+
+    Misc.COG = ini.GetDoubleValue(sectionName, "COG", 10.0);
+    Misc.GNC_Debug = ini.GetLongValue(sectionName, "GNC_DEBUG", 0);
+    Misc.telemetry = ini.GetBoolValue(sectionName, "TELEMETRY", false);
+    Misc.Focus = ini.GetLongValue(sectionName, "FOCUS", 0);
+    Misc.thrustrealpos = ini.GetBoolValue(sectionName, "THRUST_REAL_POS", false);
+
+    oapiWriteLogV("PARSER DEBUG: Misc.thrustrealpos value is: %s", Misc.thrustrealpos ? "TRUE" : "FALSE");
+
+    Misc.VerticalAngle = ini.GetDoubleValue(sectionName, "VERTICAL_ANGLE", 0.0) * RAD;
+    //added by rcraig42 to retrieve drag_factor from ini
+    Misc.drag_factor = ini.GetDoubleValue(sectionName, "drag_factor", 1.0);
+    strncpy(Misc.PadModule, ini.GetValue(sectionName, "PAD_MODULE", "EmptyModule"), MAXLEN - 1);
+
+    // Search for Touchdown Points Section
+    if (ini.GetSection("TOUCHDOWN_POINTS")) {
+        char key[32];
+        for (int i = 0; i < 3; i++) {
+            sprintf(key, "point_%d", i + 1);
+            const char* val = ini.GetValue("TOUCHDOWN_POINTS", key, "");
+            if (val && strlen(val) > 0) {
+                // Route to the Misc structure where we already store COG and drag
+                Misc.td_points[i] = CharToVec(val);
+                Misc.has_custom_td = true;
+
+                // --- DEBUG: Log the exact coordinate parsed ---
+                oapiWriteLogV("PARSER: TP[%d] Parsed: X=%.3f Y=%.3f Z=%.3f",
+                    i + 1, Misc.td_points[i].x, Misc.td_points[i].y, Misc.td_points[i].z);
+            }
+        }
+        oapiWriteLog("DEBUG: Custom Touchdown Points Parsed from INI");
     }
 }
 
@@ -563,6 +648,10 @@ void Multistage2026::parseParticle(char* filename) {
         if (!ini.GetSection(sectionName)) {
             nParticles = i;
             break;
+        }
+        // Ensure the vector has room before we write to it!
+        if (i >= Particle.size()) {
+            Particle.resize(i + 1);
         }
 
         const char* name = ini.GetValue(sectionName, "name", "Particle");
@@ -604,7 +693,7 @@ void Multistage2026::parseParticle(char* filename) {
         // Texture
         const char* tex = ini.GetValue(sectionName, "tex", "Contrail3");
         strncpy(Particle[i].TexName, tex, MAXLEN - 1);
-        Particle[i].Pss.tex = oapiRegisterParticleTexture((char*)tex);
+        Particle[i].Pss.tex = NULL;
 
         // Growth Factor
         Particle[i].GrowFactor_size = ini.GetDoubleValue(sectionName, "GrowFactor_size", 0.0);
@@ -616,45 +705,37 @@ void Multistage2026::parseParticle(char* filename) {
 void Multistage2026::parseTexture(char* filename) {
     CSimpleIniA ini;
     ini.SetUnicode();
-    if (ini.LoadFile(filename) < 0) return;
+    if (ini.LoadFile(filename) < 0) {
+        oapiWriteLogV("%s: Warning: Could not load texture file %s", GetName(), filename);
+        return;
+    }
 
     const char* sectionName = "TEXTURE_LIST";
     if (!ini.GetSection(sectionName)) return;
 
+    // Reset count before parsing
+    nTextures = 0;
     char keyName[32];
-    for (int i = 0; i < 16; i++) {
+
+    // Safely determine the limit based on your header's array size
+    // Assuming 'tex' is a struct containing TextureName[16] and hTex[16]
+    const int MAX_TEXTURES = 16; 
+
+    for (int i = 0; i < MAX_TEXTURES; i++) {
         snprintf(keyName, sizeof(keyName), "TEX_%i", i + 1);
         const char* texVal = ini.GetValue(sectionName, keyName, "");
-        if (strlen(texVal) == 0) {
-            nTextures = i;
+        // Break early if key is missing or empty
+        if (texVal == nullptr || strlen(texVal) == 0) {
             break;
         }
+        // 1. Safe String Copy: Prevent buffer overflow on the name array
         strncpy(tex.TextureName[i], texVal, MAXLEN - 1);
-        tex.hTex[i] = oapiRegisterExhaustTexture((char*)texVal);
+        tex.TextureName[i][MAXLEN - 1] = '\0'; // Explicit null termination
+
+        // 2. Increment current valid count
+        nTextures = i + 1;
     }
-}
-
-// ==============================================================
-// Misc & FX Parsing
-// ==============================================================
-
-void Multistage2026::parseMisc(char* filename) {
-    CSimpleIniA ini;
-    ini.SetUnicode();
-    if (ini.LoadFile(filename) < 0) return;
-
-    const char* sectionName = "MISC";
-    if (!ini.GetSection(sectionName)) return;
-
-    Misc.COG = ini.GetDoubleValue(sectionName, "COG", 10.0);
-    Misc.GNC_Debug = ini.GetLongValue(sectionName, "GNC_DEBUG", 0);
-    Misc.telemetry = ini.GetBoolValue(sectionName, "TELEMETRY", false);
-    Misc.Focus = ini.GetLongValue(sectionName, "FOCUS", 0);
-    Misc.thrustrealpos = ini.GetBoolValue(sectionName, "THRUST_REAL_POS", false);
-    Misc.VerticalAngle = ini.GetDoubleValue(sectionName, "VERTICAL_ANGLE", 0.0) * RAD;
-    //added by rcraig42 to retrieve drag_factor from ini 
-    Misc.drag_factor = ini.GetDoubleValue(sectionName, "drag_factor", 1.0);
-    strncpy(Misc.PadModule, ini.GetValue(sectionName, "PAD_MODULE", "EmptyModule"), MAXLEN - 1);
+    oapiWriteLogV("%s: Successfully loaded %d textures from INI.", GetName(), nTextures);
 }
 
 void Multistage2026::parseFXMach(char* filename) {
@@ -842,11 +923,9 @@ void Multistage2026::parseGuidanceFile(char* name)
         sprintf(path, "Config/%s", name);
         fVal = fopen(path, "r");
     }
-
     if (fVal != NULL) {
         char line[512];
         int i = 1; // 1-based index for Gnc_step matches legacy logic
-        
         while (fgets(line, 512, fVal) != NULL && i < 500) {
             // Clear temporary vars
             double t = 0;
@@ -856,11 +935,9 @@ void Multistage2026::parseGuidanceFile(char* name)
             // Scan: Time Command Val1 Val2 ...
             int count = sscanf(line, "%lf %s %lf %lf %lf %lf %lf %lf", 
                                &t, cmdStr, &v1, &v2, &v3, &v4, &v5, &v6);
-
             if (count >= 2) {
                 Gnc_step[i].time = t;
                 strcpy(Gnc_step[i].Comand, cmdStr); // Store string version
-                
                 // Map String to Integer ID (CM_ constants from header)
                 if (_stricmp(cmdStr, "pitch") == 0) Gnc_step[i].GNC_Comand = CM_PITCH;
                 else if (_stricmp(cmdStr, "roll") == 0) Gnc_step[i].GNC_Comand = CM_ROLL;
@@ -883,12 +960,10 @@ void Multistage2026::parseGuidanceFile(char* name)
                 Gnc_step[i].trval4 = v4;
                 Gnc_step[i].trval5 = v5;
                 Gnc_step[i].trval6 = v6;
-                
                 Gnc_step[i].executed = false;
                 i++;
             }
         }
-        
         fclose(fVal);
         nsteps = i - 1;
         stepsloaded = true;
