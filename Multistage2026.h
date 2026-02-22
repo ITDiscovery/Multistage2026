@@ -61,7 +61,6 @@ typedef void* HINSTANCE;
 
 #define TLMSECS 600
 #define MAXLEN 256
-#define CM_NOLINE 0
 
 // Handshake & Command IDs
 #define VMSG_MS26_IDENTIFY       0x2015
@@ -174,6 +173,29 @@ typedef int BOOL;
 #define STAGE_WAITING 0
 #define STAGE_IGNITED 1
 #define STAGE_SHUTDOWN 2
+
+// ==========================================
+// APOLLO DSKY PROGRAM CODES (NASSP Standard)
+// ==========================================
+#define PROG_IDLE          0   // P00: CMC Idling (Awaiting Commands)
+#define PROG_PRELAUNCH     1   // P01: Prelaunch Initialization
+#define PROG_ENGINEIGNIT   4   // Not an AGC Code
+#define PROG_TOWERJET      5   // Not an AGC Code
+#define PROG_FAIRINGJET    6   // Not an AGC Code
+#define PROG_ASCENTC       10  // Not an AGC Code (Tower Clear)
+#define PROG_ASCENTR       11  // P11: Earth Orbit Insertion Monitor (Launch)
+#define PROG_ASCENTP       12  // Not an AGC Code (Pitch)
+#define PROG_ASCENTPO      13  // Not an AGC Code (Pitch Over)
+#define PROG_ASCENTGT      14  // Not an AGC Code (Gravity Turn)
+#define PROG_PEG_INSERT    15  // P15: TLI / Powered Explicit Guidance 
+#define PROG_MECO          16  // Not an AGC Code (MECO)
+#define PROG_RENDEZVOUS    20  // P20: Universal Tracking / Rendezvous
+#define PROG_EXT_DELTAV    30  // P30: External Delta-V Targeting
+#define PROG_ORBIT_BURN    40  // P40: SPS/OMS Thrust Maneuver
+#define PROG_ENTRY_PREP    61  // P61: Entry Preparation (Attitude setup)
+#define PROG_JETTISON      62  // P62: CM/SM Separation (Staging)
+#define PROG_AERO_GUID     66  // P66: Atmospheric/Aero Control
+#define PROG_BOOM          99  // Not an AGC Code (Destroy)
 
 // ==============================================================
 // STRUCTS
@@ -469,6 +491,7 @@ public:
     int GetAutopilotStatus() const; 
     int GetMSVersion() { return 2015; }
 
+    int VinkaStatus;
     void VinkaRearrangeSteps();
     void VinkaComposeGNCSteps();
     void VinkaConsumeStep(int step);
@@ -665,12 +688,10 @@ public:
     int nReftlm; 
     int nPsg; 
     FILEHANDLE config; 
-    vector<TOUCHDOWNVTX> TouchdownPoints; 
-    
+    vector<TOUCHDOWNVTX> TouchdownPoints;
+
     ATTACHMENTHANDLE liveatt;
     ATTACHMENTHANDLE AttToRamp, AttToHangar;
-    
-    // Fixed: hhangar must be ATTACHMENTHANDLE
     ATTACHMENTHANDLE hhangar; 
     ATTACHMENTHANDLE padramp;
     OBJHANDLE hCrawler; 
@@ -679,6 +700,13 @@ public:
     void InitParticles();
     void ManageParticles(double dt, bool prestep);
     void parseTelemetryFile(char* name);
-    int WriteTelemetryFile(int mode); 
+    int WriteTelemetryFile(int mode);
+
+    // ==========================================
+    // LUA DATA BUS HANDLES
+    // ==========================================
+    THRUSTER_HANDLE hBus_AP;
+    THRUSTER_HANDLE hBus_Config;
+    THRUSTER_HANDLE hBus_Prog;
 };
 #endif

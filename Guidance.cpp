@@ -271,102 +271,114 @@ void Multistage2026::VinkaComposeGNCSteps() {
     char logbuff[256];
 
     for (int i = 0; i <= nsteps; i++) {
+
         Gnc_step[i].executed = FALSE;
         
-        // Lowercase command
-        for (int z = 0; z < 128; z++) {
-            Gnc_step[i].Comand[z] = tolower(Gnc_step[i].Comand[z]);
+        // --- SECTION 1: CASE-INSENSITIVE COMMAND MAPPING ---
+        // Using strncasecmp for POSIX compliance on Linux.
+        // This makes the parser immune to case differences and Windows \r line endings.
+        
+        if      (strncasecmp(Gnc_step[i].Comand, "engine", 6) == 0)      Gnc_step[i].GNC_Comand = CM_ENGINE;
+        else if (strncasecmp(Gnc_step[i].Comand, "roll", 4) == 0)        Gnc_step[i].GNC_Comand = CM_ROLL;
+        else if (strncasecmp(Gnc_step[i].Comand, "pitch", 5) == 0)       Gnc_step[i].GNC_Comand = CM_PITCH;
+        else if (strncasecmp(Gnc_step[i].Comand, "fairing", 7) == 0)     Gnc_step[i].GNC_Comand = CM_FAIRING;
+        else if (strncasecmp(Gnc_step[i].Comand, "les", 3) == 0)         Gnc_step[i].GNC_Comand = CM_LES;
+        else if (strncasecmp(Gnc_step[i].Comand, "jettison", 8) == 0)    Gnc_step[i].GNC_Comand = CM_JETTISON;
+        else if (strncasecmp(Gnc_step[i].Comand, "orbit", 5) == 0)       Gnc_step[i].GNC_Comand = CM_ORBIT;
+        else if (strncasecmp(Gnc_step[i].Comand, "aoa", 3) == 0)         Gnc_step[i].GNC_Comand = CM_AOA;
+        else if (strncasecmp(Gnc_step[i].Comand, "target", 6) == 0)      Gnc_step[i].GNC_Comand = CM_TARGET;
+        else if (strncasecmp(Gnc_step[i].Comand, "attitude", 8) == 0)    Gnc_step[i].GNC_Comand = CM_ATTITUDE;
+        else if (strncasecmp(Gnc_step[i].Comand, "spin", 4) == 0)        Gnc_step[i].GNC_Comand = CM_SPIN;
+        else if (strncasecmp(Gnc_step[i].Comand, "inverse", 7) == 0)     Gnc_step[i].GNC_Comand = CM_INVERSE;
+        else if (strncasecmp(Gnc_step[i].Comand, "engineout", 9) == 0)   Gnc_step[i].GNC_Comand = CM_ENGINEOUT;
+        else if (strncasecmp(Gnc_step[i].Comand, "defap", 5) == 0)       Gnc_step[i].GNC_Comand = CM_DEFAP;
+        else if (strncasecmp(Gnc_step[i].Comand, "glimit", 6) == 0)      Gnc_step[i].GNC_Comand = CM_GLIMIT;
+        else if (strncasecmp(Gnc_step[i].Comand, "destroy", 7) == 0)     Gnc_step[i].GNC_Comand = CM_DESTROY;
+        else if (strncasecmp(Gnc_step[i].Comand, "explode", 7) == 0)     Gnc_step[i].GNC_Comand = CM_EXPLODE;
+        else if (strncasecmp(Gnc_step[i].Comand, "playsound", 9) == 0)   Gnc_step[i].GNC_Comand = CM_PLAY;
+        else if (strncasecmp(Gnc_step[i].Comand, "disable", 7) == 0) {
+             // Sub-command logic for Disable(pitch|roll|jettison) 
+             if      (strcasestr(Gnc_step[i].Comand, "pitch"))    Gnc_step[i].GNC_Comand = CM_DISABLE_PITCH;
+             else if (strcasestr(Gnc_step[i].Comand, "roll"))     Gnc_step[i].GNC_Comand = CM_DISABLE_ROLL;
+             else if (strcasestr(Gnc_step[i].Comand, "jettison")) Gnc_step[i].GNC_Comand = CM_DISABLE_JETTISON;
         }
+        else Gnc_step[i].GNC_Comand = CM_NOLINE;
 
-        // Command Mapping
-        if (strcmp(Gnc_step[i].Comand, "engine") == 0) Gnc_step[i].GNC_Comand = CM_ENGINE;
-        else if (strcmp(Gnc_step[i].Comand, "roll") == 0) Gnc_step[i].GNC_Comand = CM_ROLL;
-        else if (strcmp(Gnc_step[i].Comand, "pitch") == 0) Gnc_step[i].GNC_Comand = CM_PITCH;
-        else if (strcmp(Gnc_step[i].Comand, "fairing") == 0) Gnc_step[i].GNC_Comand = CM_FAIRING;
-        else if (strcmp(Gnc_step[i].Comand, "les") == 0) Gnc_step[i].GNC_Comand = CM_LES;
-        else if (strcmp(Gnc_step[i].Comand, "disablepitch") == 0) Gnc_step[i].GNC_Comand = CM_DISABLE_PITCH;
-        else if (strcmp(Gnc_step[i].Comand, "disableroll") == 0) Gnc_step[i].GNC_Comand = CM_DISABLE_ROLL;
-        else if (strcmp(Gnc_step[i].Comand, "disablejettison") == 0) Gnc_step[i].GNC_Comand = CM_DISABLE_JETTISON;
-        else if (strcmp(Gnc_step[i].Comand, "playsound") == 0) Gnc_step[i].GNC_Comand = CM_PLAY;
-        else if (strcmp(Gnc_step[i].Comand, "jettison") == 0) Gnc_step[i].GNC_Comand = CM_JETTISON;
-        else if (strcmp(Gnc_step[i].Comand, "target") == 0) Gnc_step[i].GNC_Comand = CM_TARGET;
-        else if (strcmp(Gnc_step[i].Comand, "aoa") == 0) Gnc_step[i].GNC_Comand = CM_AOA;
-        else if (strcmp(Gnc_step[i].Comand, "attitude") == 0) Gnc_step[i].GNC_Comand = CM_ATTITUDE;
-        else if (strcmp(Gnc_step[i].Comand, "spin") == 0) Gnc_step[i].GNC_Comand = CM_SPIN;
-        else if (strcmp(Gnc_step[i].Comand, "inverse") == 0) Gnc_step[i].GNC_Comand = CM_INVERSE;
-        else if (strcmp(Gnc_step[i].Comand, "engineout") == 0) Gnc_step[i].GNC_Comand = CM_ENGINEOUT;
-        else if (strcmp(Gnc_step[i].Comand, "orbit") == 0) Gnc_step[i].GNC_Comand = CM_ORBIT;
-        else if (strcmp(Gnc_step[i].Comand, "defap") == 0) Gnc_step[i].GNC_Comand = CM_DEFAP;
-        else if (strcmp(Gnc_step[i].Comand, "glimit") == 0) Gnc_step[i].GNC_Comand = CM_GLIMIT;
-        else if (strcmp(Gnc_step[i].Comand, "destroy") == 0) Gnc_step[i].GNC_Comand = CM_DESTROY;
-        else if (strcmp(Gnc_step[i].Comand, "explode") == 0) Gnc_step[i].GNC_Comand = CM_EXPLODE;
-        else if (strcmp(Gnc_step[i].Comand, "noline") == 0) Gnc_step[i].GNC_Comand = CM_NOLINE;
-
+        // --- SECTION 2: PARAMETER INITIALIZATION ---
         Gnc_step[0].time_fin = -10000;
 
         switch (Gnc_step[i].GNC_Comand) {
-        case CM_ENGINE:
-            Gnc_step[i].val_init = Gnc_step[i].trval1;
-            Gnc_step[i].val_fin = Gnc_step[i].trval2;
-            if (Gnc_step[i].val_fin == 0) { Gnc_step[i].val_fin = -1; }
-            Gnc_step[i].time_init = Gnc_step[i].time;
-            Gnc_step[i].duration = Gnc_step[i].trval3;
-            if (Gnc_step[i].duration == 0) { Gnc_step[i].duration = 0.01; }
-            Gnc_step[i].time_fin = Gnc_step[i].time_init + Gnc_step[i].duration;
-            break;
 
-        case CM_ROLL:
-            Gnc_step[i].time_init = Gnc_step[i].time;
-            Gnc_step[i].val_init = Gnc_step[i].trval2;
-            Gnc_step[i].val_fin = Gnc_step[i].trval4;
-            Gnc_step[i].duration = 60;
-            Gnc_step[i].time_fin = Gnc_step[i].time_init + Gnc_step[i].duration;
-            break;
+            case CM_PITCH:
+                Gnc_step[i].time_init = Gnc_step[i].time;
+                Gnc_step[i].val_init = Gnc_step[i].trval1;
+                Gnc_step[i].val_fin = Gnc_step[i].trval2;
+                Gnc_step[i].duration = Gnc_step[i].trval3;
+                Gnc_step[i].time_fin = Gnc_step[i].time_init + Gnc_step[i].duration;
+                break;
 
-        case CM_PITCH:
-            Gnc_step[i].time_init = Gnc_step[i].time;
-            Gnc_step[i].val_init = Gnc_step[i].trval1;
-            Gnc_step[i].val_fin = Gnc_step[i].trval2;
-            Gnc_step[i].duration = Gnc_step[i].trval3;
-            Gnc_step[i].time_fin = Gnc_step[i].time_init + Gnc_step[i].duration;
-            break;
+            case CM_ROLL:
+                Gnc_step[i].time_init = Gnc_step[i].time;
+                Gnc_step[i].val_init = Gnc_step[i].trval2;
+                Gnc_step[i].val_fin = Gnc_step[i].trval4;
+                // Use trval3 for duration if provided, otherwise legacy 60s
+                Gnc_step[i].duration = (Gnc_step[i].trval3 > 0) ? Gnc_step[i].trval3 : 60.0; 
+                Gnc_step[i].time_fin = Gnc_step[i].time_init + Gnc_step[i].duration;
+                break;
 
-        case CM_ORBIT:
-            Gnc_step[i].time_init = Gnc_step[i].time;
-            Gnc_step[i].time_fin = Gnc_step[i].time_init + 10000;
-            tgtapo = Gnc_step[i].trval2 * 1000;
-            tgtperi = Gnc_step[i].trval1 * 1000;
-            tgtinc = Gnc_step[i].trval3 * RAD;
-            VinkaMode = Gnc_step[i].trval4;
-            if (VinkaMode == 0) { VinkaMode = 1; }
-            GT_InitPitch = Gnc_step[i].trval5 * RAD;
-            tgtabside = Gnc_step[i].trval6 * 1000;
-            wPeg = TRUE;
-            CalculateTargets();
-            
-            snprintf(logbuff, sizeof(logbuff), "%s: Orbit Call Found! Targets: Apogee:%.1f Perigee:%.1f Inclination:%.1f", GetName(), tgtapo, tgtperi, tgtinc * DEG);
-            oapiWriteLog(logbuff);
-            break;
+            case CM_ENGINE:
+                Gnc_step[i].time_init = Gnc_step[i].time;
+                Gnc_step[i].val_init = Gnc_step[i].trval1;
+                Gnc_step[i].val_fin = Gnc_step[i].trval2;
+                if (Gnc_step[i].val_fin == 0) { Gnc_step[i].val_fin = -1; }
+                Gnc_step[i].duration = Gnc_step[i].trval3;
+                if (Gnc_step[i].duration <= 0) { Gnc_step[i].duration = 0.01; }
+                Gnc_step[i].time_fin = Gnc_step[i].time_init + Gnc_step[i].duration;
+                break;
 
-        // Default handler for single events (Jettison, etc.)
-        default:
-            Gnc_step[i].time_init = Gnc_step[i].time;
-            Gnc_step[i].time_fin = Gnc_step[i].time_init + 2;
-            
-            if (Gnc_step[i].GNC_Comand == CM_AOA) {
+            case CM_ORBIT:
+                Gnc_step[i].time_init = Gnc_step[i].time;
+                Gnc_step[i].time_fin = Gnc_step[i].time_init + 10000; 
+                tgtperi = Gnc_step[i].trval1 * 1000.0; 
+                tgtapo = Gnc_step[i].trval2 * 1000.0;  
+                tgtinc = Gnc_step[i].trval3 * RAD;     
+                VinkaMode = (Gnc_step[i].trval4 == 0) ? 1 : (int)Gnc_step[i].trval4;
+                GT_InitPitch = Gnc_step[i].trval5 * RAD;
+                tgtabside = Gnc_step[i].trval6 * 1000.0;
+                wPeg = TRUE; 
+                CalculateTargets();
+                break;
+
+            case CM_AOA:
+                Gnc_step[i].time_init = Gnc_step[i].time;
                 Gnc_step[i].duration = Gnc_step[i].trval2;
-                if (Gnc_step[i].duration <= 0) Gnc_step[i].time_fin = Gnc_step[i].time_init + 60;
-                else Gnc_step[i].time_fin = Gnc_step[i].time_init + Gnc_step[i].duration;
                 Gnc_step[i].val_init = Gnc_step[i].trval1 * RAD;
-            }
-            if (Gnc_step[i].GNC_Comand == CM_ATTITUDE) {
+                // Logic check: if duration is missing, default to 60s
+                Gnc_step[i].time_fin = Gnc_step[i].time_init + (Gnc_step[i].duration <= 0 ? 60.0 : Gnc_step[i].duration);
+                break;
+
+            case CM_ATTITUDE:
+                Gnc_step[i].time_init = Gnc_step[i].time;
                 Gnc_step[i].duration = Gnc_step[i].trval4;
-                if (Gnc_step[i].duration <= 0) Gnc_step[i].time_fin = Gnc_step[i].time_init + 60;
-                else Gnc_step[i].time_fin = Gnc_step[i].time_init + Gnc_step[i].duration;
+                // Logic check: if duration is missing, default to 60s
+                Gnc_step[i].time_fin = Gnc_step[i].time_init + (Gnc_step[i].duration <= 0 ? 60.0 : Gnc_step[i].duration);
+                break;
+
+            case CM_TARGET:
+                tgtperi = Gnc_step[i].trval1 * 1000.0;
+                tgtapo = Gnc_step[i].trval2 * 1000.0;
+                tgtinc = Gnc_step[i].trval3 * RAD;
+                CalculateTargets(); 
+                break;
+
+            default:
+                // One-Shot triggers like JETTISON, LES, FAIRING, PLAY, EXPLODE
+                Gnc_step[i].time_init = Gnc_step[i].time;
+                // Explicitly set time_fin to time_init so the event fires once and marks as done
+                Gnc_step[i].time_fin = Gnc_step[i].time_init; 
+                break;
             }
-            break;
         }
-    }
 
     if (!wPeg) {
         VinkaUpdateRollTime();
@@ -376,73 +388,107 @@ void Multistage2026::VinkaComposeGNCSteps() {
 // ==============================================================
 // Step Consumption (Runtime)
 // ==============================================================
-
 void Multistage2026::VinkaConsumeStep(int step) {
-    if (Gnc_step[step].time_fin <= MET) { Gnc_step[step].executed = TRUE; }
+
+    // 1. Frame-Rate Safety: Stop processing if this step is already done
+    if (Gnc_step[step].time_fin <= MET) { 
+        Gnc_step[step].executed = TRUE; 
+    }
 
     if (Gnc_step[step].executed == FALSE) {
         switch (Gnc_step[step].GNC_Comand) {
-        case CM_ENGINE:
-            VinkaEngine(step);
+        case CM_ENGINE: {
+            // 1. Smooth Ramp Calculation for Main Engines
+            double time_elapsed = MET - Gnc_step[step].time_init;
+            double thrust_target = Gnc_step[step].val_init + ((Gnc_step[step].val_fin - Gnc_step[step].val_init) * (time_elapsed / Gnc_step[step].duration));
+            // Safety clamps to prevent over/under throttling via bad math
+            if (thrust_target > 100.0) thrust_target = 100.0;
+            if (thrust_target < 0.0) thrust_target = 0.0;
+            SetThrusterGroupLevel(THGROUP_MAIN, thrust_target / 100.0);
+
+            // 2. THE BOOSTER IGNITION TRIGGER (Lighting the Candle)
+            if (MET >= 0.0 && Gnc_step[step].val_fin > 0) {
+                for (int kb = 0; kb < nBoosters; kb++) {
+                    if (booster[kb].Ignited == false) {
+                        booster[kb].Ignited = true;
+                        booster[kb].IgnitionTime = MET;
+                    }
+                }
+            }
             break;
+        }
+
         case CM_ROLL:
+            // Refactored for smooth bank transition (Backwards Compatible)
             VinkaRoll(step);
             break;
+
         case CM_PITCH:
             VinkaPitch(step);
             break;
+
         case CM_FAIRING:
+            // Altitude-based jettison check from MS2015 documentation
             if ((wFairing == 1) && (GetAltitude() >= Gnc_step[step].val_init)) {
                 Jettison(TFAIRING, 0);
-                Gnc_step[step].time_fin = MET;
                 Gnc_step[step].executed = TRUE;
             }
             break;
+
         case CM_LES:
             if ((wLes == TRUE) && (GetAltitude() >= Gnc_step[step].val_init)) {
                 Jettison(TLES, 0);
-                Gnc_step[step].time_fin = MET;
                 Gnc_step[step].executed = TRUE;
             }
             break;
+
         case CM_JETTISON:
-            // Simulate J Keypress or direct jettison
-            // SendBufferedKey(OAPI_KEY_J, true, kstate); -> Replaced with direct call
-            // Using generic Jettison logic:
-            if (currentBooster < nBoosters) Jettison(TBOOSTER, currentBooster);
-            else if (currentStage < nStages - 1) Jettison(TSTAGE, currentStage);
+            // TIMED JETTISON: This replaces the unstable mass-checker
+            if (currentBooster < nBoosters) {
+                Jettison(TBOOSTER, currentBooster);
+            } else if (currentStage < nStages - 1) {
+                Jettison(TSTAGE, currentStage);
+            }
             Gnc_step[step].executed = TRUE;
-            break;
-            
+            // LINUX STABILITY: Exit function to let pointers settle after staging
+            return; 
+
         case CM_ORBIT:
-            if (Configuration == 1) { // Running as Main Rocket
+            // Full Sequence Autopilot Implementation
+            if (Configuration == 1) { 
                 runningPeg = TRUE;
-                if (GetAltitude() < altsteps[0]) {
+                double alt = GetAltitude();
+
+                // Phase 1: Tower Clearance
+                if (alt < altsteps[0]) {
                     TgtPitch = 90 * RAD - Misc.VerticalAngle;
                     Attitude(TgtPitch, GetBank(), GetHeading(), 8, 0, 5);
                 }
-                else if ((GetAltitude() >= altsteps[0]) && (GetAltitude() < altsteps[1])) {
+                // Phase 2: Roll Program
+                else if (alt >= altsteps[0] && alt < altsteps[1]) {
                     TgtPitch = 89.9 * RAD - Misc.VerticalAngle;
                     Attitude(TgtPitch, (0.5 * (1 - VinkaMode) * PI), GetProperHeading(), 8, 20, 5);
                 }
-                else if ((GetAltitude() >= altsteps[1]) && (GetAltitude() < altsteps[2])) {
+                // Phase 3: Initial Pitch-Over
+                else if (alt >= altsteps[1] && alt < altsteps[2]) {
                     TgtPitch = GT_InitPitch;
-                    // Linear interpolation logic
-                    double deltaAltitude = altsteps[2] - GetAltitude();
-                    double deltaTime = sqrt((2 * deltaAltitude) / (1.5 * getabsacc() - g0));
-                    double PitchRate = fabs((GetPitch() - GT_InitPitch) / deltaTime);
-                    Attitude(GT_InitPitch, (0.5 * (1 - VinkaMode) * PI), GetProperHeading(), PitchRate * DEG, 20, PitchRate * DEG);
+                    double deltaAlt = altsteps[2] - alt;
+                    double deltaT = sqrt((2 * deltaAlt) / (1.5 * getabsacc() - 9.80665));
+                    double pRate = fabs((GetPitch() - GT_InitPitch) / deltaT);
+                    Attitude(GT_InitPitch, (0.5 * (1 - VinkaMode) * PI), GetProperHeading(), pRate * DEG, 20, pRate * DEG);
                 }
-                else if ((GetAltitude() >= altsteps[2]) && (GetAltitude() < altsteps[3])) {
-                    double DesiredPitch = GetPitch() - VinkaMode * GetAOA() + (-0.7 * RAD);
-                    TgtPitch = DesiredPitch;
-                    Attitude(DesiredPitch, (0.5 * (1 - VinkaMode) * PI), GetProperHeading(), 8, 5, 8);
+                // Phase 4: Open-Loop Gravity Turn
+                else if (alt >= altsteps[2] && alt < altsteps[3]) {
+                    VinkaStatus = PROG_ASCENTGT;
+                    double DesiredP = GetPitch() - VinkaMode * GetAOA() + (-0.7 * RAD);
+                    TgtPitch = DesiredP;
+                    Attitude(DesiredP, (0.5 * (1 - VinkaMode) * PI), GetProperHeading(), 8, 5, 8);
                 }
+                // Phase 5: PEG Closed-Loop Guidance
                 else {
                     if (GetThrusterGroupLevel(THGROUP_MAIN) > 0.1) {
-                        PEG(); // PEG Guidance Call
+                        PEG();
                         if (CutoffCheck() == TRUE) {
-                            Gnc_step[step].time_fin = MET + 1;
                             Gnc_step[step].executed = TRUE;
                         }
                     }
@@ -461,7 +507,6 @@ void Multistage2026::VinkaConsumeStep(int step) {
 // ==============================================================
 // Step Helpers (Engine, Roll, Pitch)
 // ==============================================================
-
 void Multistage2026::VinkaEngine(int step) {
     double progress = (MET - Gnc_step[step].time_init) / (Gnc_step[step].time_fin - Gnc_step[step].time_init);
     double DesiredEngineLevel = (Gnc_step[step].val_init + (Gnc_step[step].val_fin - Gnc_step[step].val_init) * progress) / 100.0;
@@ -494,11 +539,63 @@ void Multistage2026::VinkaPitch(int step) {
 }
 
 void Multistage2026::VinkaAutoPilot() {
-    for (int q = 1; q <= VinkaGetStep(MET); q++) {
-        VinkaConsumeStep(q);
+    // 1. Diagnostic Logging (Static to avoid header clutter)
+    static double lastLogTime = 0; 
+    double simT = oapiGetSimTime();
+
+    //if (simT - lastLogTime > 1.0) {
+    //    oapiWriteLogV("VINKA DEBUG: AP=%d, Config=%d, MET=%.1f", APstat, Configuration, MET);
+    //    lastLogTime = simT;
+    //}
+
+    // 2. Safety Gate: Only run if Autopilot is active and we have actually lifted off
+    // This prevents "pre-firing" steps while still on the launchpad [cite: 44-46]
+    if (!APstat || Configuration == 0) return;
+
+    // 3. Step Execution Loop
+    // nsteps is the total lines loaded from your guidance file (7 lines in your log) [cite: 2]
+    for (int i = 1; i < nsteps; i++) {
+        // Condition: Time is right, step isn't done, and we are in flight mode 
+        if (MET >= Gnc_step[i].time && !Gnc_step[i].executed) {
+            
+            // Execute the specific command (ORBIT, ROLL, PITCH, etc.)
+            VinkaConsumeStep(i);
+            
+            // Mark as done so it never runs again this flight
+            Gnc_step[i].executed = true; 
+
+            // Log the execution for verification in Orbiter.log
+            oapiWriteLogV("OTTO: Executed Step %d [%s] at MET %.1f", i, Gnc_step[i].Comand, MET);
+        }
+    }
+    // ===========================================================
+    // MASTER TELEMETRY BROADCASTER (Apollo P-Code Mapping)
+    // ===========================================================
+    int lastExecutedIdx = -1;
+
+    // Find the highest index that has .executed == true
+    for (int j = 1; j < nsteps; j++) {
+        if (Gnc_step[j].executed) {
+            lastExecutedIdx = j;
+        }
+    }
+
+    if (lastExecutedIdx != -1) {
+        char* cmdStr = Gnc_step[lastExecutedIdx].Comand;
+
+        // Use strncasecmp to check just the start of the string (ignores case and trailing spaces)
+        if      (strncasecmp(cmdStr, "ENGINE", 6) == 0)   VinkaStatus = 4;
+        else if (strncasecmp(cmdStr, "ROLL", 4) == 0)     VinkaStatus = 11;
+        else if (strncasecmp(cmdStr, "PITCH", 5) == 0)    VinkaStatus = 12;
+        else if (strncasecmp(cmdStr, "ORBIT", 5) == 0)    VinkaStatus = 40;
+        else if (strncasecmp(cmdStr, "FAIRING", 7) == 0)  VinkaStatus = 6;
+        else if (strncasecmp(cmdStr, "JETTISON", 8) == 0) VinkaStatus = 62;
+        else if (strncasecmp(cmdStr, "LES", 3) == 0)      VinkaStatus = 5;
+        else                                              VinkaStatus = 1; // P01
+    } else {
+        VinkaStatus = 1; 
     }
 }
-
 // ==============================================================
 // Guidance File Parsing Utilities
 // ==============================================================

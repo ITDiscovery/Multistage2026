@@ -273,6 +273,7 @@ Multistage2026::Multistage2026(OBJHANDLE hObj, int fmodel) :VESSEL3(hObj, fmodel
     TotalHeight = 0.0;
     Tu = 0.0;
     VertVel = 0.0;
+    VinkaStatus = PROG_IDLE;
     VinkaAzimuth = 0.0;
     VinkaMode = 0.0;
     for (int i = 0; i < 10; i++) VthetaAtStaging[i] = 0.0;
@@ -413,6 +414,7 @@ void oapiWriteLogV(const char* format, ...) {
     vsnprintf(va_buff, sizeof(va_buff), format, va);
     va_end(va);
     oapiWriteLog((char*)va_buff);
+    fflush(stdout);
 }
 
 // ==============================================================
@@ -465,7 +467,6 @@ void Multistage2026::ResetVehicle(VECTOR3 hangaranimsV, bool Ramp) {
     }
 
     parseGuidanceFile(guidancefile);
-    UpdateOffsets();
     VehicleSetup();
     LoadMeshes();
 
@@ -975,11 +976,9 @@ VECTOR3 Multistage2026::RotateVector(const VECTOR3& input, double angle, const V
 
 void Multistage2026::LoadMeshes() {
 
-    // 1. Log the limits BEFORE the loop to see if nStages is garbage
-    char buff[256];
-    sprintf(buff, "MESHES: Start - currentStage: %d, nStages: %d, Vector Size: %ld", 
-            currentStage, nStages, stage.size());
-    oapiWriteLog(buff);
+    // Log the limits BEFORE the loop to see if nStages is garbage
+    //oapiWriteLogV("MESHES: Start - currentStage: %d, nStages: %d, Vector Size: %ld",
+    //        currentStage, nStages, stage.size());
 
     // ---------------------------------------------------------
     // 1. Load Main Stages
@@ -995,18 +994,18 @@ void Multistage2026::LoadMeshes() {
         stage[q].msh_idh = AddMesh(stage[q].msh_h, &pos);
 
         // Log the final addition with coordinates
-        oapiWriteLogV("%s: Stage n.%i Mesh Added Mesh: %s @ x:%.3f y:%.3f z:%.3f", 
-            GetName(), q + 1, stage[q].meshname, pos.x, pos.y, pos.z);
+        //oapiWriteLogV("MESHES: %s Stage n.%i Mesh Added Mesh: %s @ x:%.3f y:%.3f z:%.3f", 
+        //    GetName(), q + 1, stage[q].meshname, pos.x, pos.y, pos.z);
 
         // Load Interstage (if present for this stage)
         if (stage[q].wInter == TRUE) {
             VECTOR3 inspos = stage[q].interstage.off;
             // Note: The interstage logic below was already correct in your snippet
             stage[q].interstage.msh_h = oapiLoadMeshGlobal((char*)stage[q].interstage.meshname.c_str());
-            oapiWriteLogV("%s: Interstage Mesh Preloaded for Stage %i", GetName(), q + 1);
+            //oapiWriteLogV("MESHES: s Interstage Mesh Preloaded for Stage %i", GetName(), q + 1);
             stage[q].interstage.msh_idh = AddMesh(stage[q].interstage.msh_h, &inspos);
-            oapiWriteLogV("%s: Interstage Mesh Added: %s @ x:%.3f y:%.3f z:%.3f", 
-                GetName(), stage[q].interstage.meshname.c_str(), inspos.x, inspos.y, inspos.z);
+            //oapiWriteLogV("MESHES: %s Interstage Mesh Added: %s @ x:%.3f y:%.3f z:%.3f", 
+            //    GetName(), stage[q].interstage.meshname.c_str(), inspos.x, inspos.y, inspos.z);
         }
     }
 
@@ -1022,9 +1021,9 @@ void Multistage2026::LoadMeshes() {
                 VECTOR3 pos = payload[pns].off[nm];
                 // Get proper name handles multi-part payloads
                 payload[pns].msh_h[nm] = oapiLoadMeshGlobal(GetProperPayloadMeshName(pns, nm));
-                oapiWriteLogV("%s Payload Mesh Preloaded %i", GetName(), pns + 1);
+                //oapiWriteLogV("MESHES: %s Payload Mesh Preloaded %i", GetName(), pns + 1);
                 payload[pns].msh_idh[nm] = AddMesh(payload[pns].msh_h[nm], &pos);
-                oapiWriteLogV("%s: Payload n.%i Mesh Added: %s @ x:%.3f y:%.3f z:%.3f", GetName(), pns + 1, GetProperPayloadMeshName(pns, nm), pos.x, pos.y, pos.z);
+                //oapiWriteLogV("MESHES: %s: Payload n.%i Mesh Added: %s @ x:%.3f y:%.3f z:%.3f", GetName(), pns + 1, GetProperPayloadMeshName(pns, nm), pos.x, pos.y, pos.z);
 
                 // Hide payload if inside fairing?
                 if ((payload[pns].render == 0) && (wFairing == 1)) {
@@ -1077,9 +1076,9 @@ void Multistage2026::LoadMeshes() {
             VECTOR3 bposdef = _V(bpos.x * cos(arg) - bpos.y * sin(arg), bpos.x * sin(arg) + bpos.y * cos(arg), bpos.z);
 
             booster.at(qb).msh_h[NN] = oapiLoadMeshGlobal(boosmhname);
-            oapiWriteLogV("%s: Booster Mesh Preloaded: %s", GetName(), boosmhname);
+            //oapiWriteLogV("MESHES: %s Booster Mesh Preloaded: %s", GetName(), boosmhname);
             booster.at(qb).msh_idh[NN] = AddMesh(booster.at(qb).msh_h[NN], &bposdef);
-            oapiWriteLogV("%s: Booster Mesh Added Mesh: %s @ x:%.3f y:%.3f z:%.3f", GetName(), boosmhname, bposdef.x, bposdef.y, bposdef.z);
+            //oapiWriteLogV("MESHES: %s Booster Mesh Added Mesh: %s @ x:%.3f y:%.3f z:%.3f", GetName(), boosmhname, bposdef.x, bposdef.y, bposdef.z);
         }
     }
 
@@ -1101,9 +1100,9 @@ void Multistage2026::LoadMeshes() {
             VECTOR3 fposdef = _V(fro * cos(fairing.angle * RAD + (NF - 1) * 2 * PI / fairing.N), fro * sin(fairing.angle * RAD + (NF - 1) * 2 * PI / fairing.N), fpos.z);
 
             fairing.msh_h[NF] = oapiLoadMeshGlobal(fairmshname);
-            oapiWriteLogV("%s: Fairing Mesh Preloaded: %s", GetName(), fairmshname);
+            //oapiWriteLogV("MESHES: %s Fairing Mesh Preloaded: %s", GetName(), fairmshname);
             fairing.msh_idh[NF] = AddMesh(fairing.msh_h[NF], &fposdef);
-            oapiWriteLogV("%s: Fairing Mesh Added Mesh: %s @ x:%.3f y:%.3f z:%.3f", GetName(), fairmshname, fposdef.x, fposdef.y, fposdef.z);
+            //oapiWriteLogV("MESHES: %s: Fairing Mesh Added Mesh: %s @ x:%.3f y:%.3f z:%.3f", GetName(), fairmshname, fposdef.x, fposdef.y, fposdef.z);
         }
     }
 
@@ -1113,9 +1112,9 @@ void Multistage2026::LoadMeshes() {
     if (wAdapter == TRUE) {
         VECTOR3 adappos = Adapter.off;
         Adapter.msh_h = oapiLoadMeshGlobal((char*)Adapter.meshname.c_str());
-        oapiWriteLogV("%s: Adapter Mesh Preloaded", GetName());
+        //oapiWriteLogV("MESHES: %s Adapter Mesh Preloaded", GetName());
         Adapter.msh_idh = AddMesh(Adapter.msh_h, &adappos);
-        oapiWriteLogV("%s: Adapter Mesh Added: %s @ x:%.3f y:%.3f z:%.3f", GetName(), Adapter.meshname.c_str(), adappos.x, adappos.y, adappos.z);
+        //oapiWriteLogV("MESHES: %s Adapter Mesh Added: %s @ x:%.3f y:%.3f z:%.3f", GetName(), Adapter.meshname.c_str(), adappos.x, adappos.y, adappos.z);
     }
 
     // ---------------------------------------------------------
@@ -1124,9 +1123,9 @@ void Multistage2026::LoadMeshes() {
     if (wLes == TRUE) {
         VECTOR3 LesPos = Les.off;
         Les.msh_h = oapiLoadMeshGlobal((char*)Les.meshname.c_str());
-        oapiWriteLogV("%s: Les Mesh Preloaded", GetName());
+        //oapiWriteLogV("MESHES %s Les Mesh Preloaded", GetName());
         Les.msh_idh = AddMesh(Les.msh_h, &LesPos);
-        oapiWriteLogV("%s: Les Mesh Added %s @ x:%.3f y:%.3f z:%.3f", GetName(), Les.meshname.c_str(), LesPos.x, LesPos.y, LesPos.z);
+        //oapiWriteLogV("MESHES: %s Les Mesh Added %s @ x:%.3f y:%.3f z:%.3f", GetName(), Les.meshname.c_str(), LesPos.x, LesPos.y, LesPos.z);
     }
 }
 
@@ -1206,28 +1205,6 @@ void Multistage2026::UpdateMass() {
     if (wAdapter == TRUE) { EM += Adapter.emptymass; }
     if (wLes == TRUE) { EM += Les.emptymass; }
     SetEmptyMass(EM);
-}
-
-// Shift CG as stages drop
-void Multistage2026::UpdateOffsets() {
-    currentDelta = stage.at(currentStage).off.z;
-    for (int i = currentStage; i < nStages; i++) {
-        stage.at(i).off.z -= currentDelta;
-        if (stage.at(i).wInter == TRUE) {
-            stage.at(i).interstage.off.z -= currentDelta;
-        }
-    }
-    for (int p = currentPayload; p < nPayloads; p++) {
-        for (int s = 0; s < payload[p].nMeshes; s++) {
-            payload[p].off[s].z -= currentDelta;
-        }
-    }
-    for (int z = currentBooster; z < nBoosters; z++) {
-        booster.at(z).off.z -= currentDelta;
-    }
-    if (wFairing == 1) fairing.off.z -= currentDelta;
-    if (wAdapter == TRUE) Adapter.off.z -= currentDelta;
-    if (wLes == TRUE) Les.off.z -= currentDelta;
 }
 
 //  Hndling attached vessels
@@ -1437,14 +1414,15 @@ void Multistage2026::VehicleSetup() {
             VECTOR3 pos = (Misc.thrustrealpos) ? GetBoosterPos(bi, bn) : _V(0,0,0);
             VECTOR3 dir = (Misc.thrustrealpos) ? booster.at(bi).eng_dir : _V(0,0,1);
 
-            booster.at(bi).th_booster_h.at(bn) = CreateThruster(pos, dir, booster.at(bi).thrust, booster.at(bi).tank, booster.at(bi).isp, booster.at(bi).isp, 101400.0);
+            booster.at(bi).th_booster_h.at(bn) = CreateThruster(pos, dir, booster.at(bi).thrust, booster.at(bi).tank, booster.at(bi).isp);
             if (booster.at(bi).th_booster_h.at(bn) != NULL) {
                 hAllMain[totalMainCount++] = booster.at(bi).th_booster_h.at(bn);
             }
-        // Initialize the individual curve handle ---
+        } // <-- FIX: Engine loop closes HERE now!
+
+        // Initialize the individual curve handle safely outside the engine loop
         if (booster.at(bi).N > 0) {
             booster.at(bi).Thg_boosters_h = CreateThrusterGroup(booster.at(bi).th_booster_h.data(), booster.at(bi).N, THGROUP_USER);
-            }
         }
 
         // B. Hardened Visuals (Prevents GetProperPS crash)
@@ -1464,7 +1442,6 @@ void Multistage2026::VehicleSetup() {
             }
         }
     }
-
     // 7. Register UNIFIED group
     if (totalMainCount > 0) {
         thg_h_main = CreateThrusterGroup(hAllMain, totalMainCount, THGROUP_MAIN);
@@ -1487,6 +1464,14 @@ void Multistage2026::VehicleSetup() {
     if (currentBooster < nBoosters) wBoosters = true;
     UpdateMass();
     UpdatePMI();
+
+    // ==========================================
+    // THE LUA DATA BUS (Phantom Registers)
+    // ==========================================
+    // Positioned at Y=999.0 so Lua can find them. No fuel, no physical thrust.
+    hBus_AP     = CreateThruster(_V(1.0, 999.0, 0.0), _V(0,1,0), 0.0, NULL, 0.0);
+    hBus_Config = CreateThruster(_V(2.0, 999.0, 0.0), _V(0,1,0), 0.0, NULL, 0.0);
+    hBus_Prog   = CreateThruster(_V(3.0, 999.0, 0.0), _V(0,1,0), 0.0, NULL, 0.0);
 
     bVesselInitialized = true;
 
@@ -1542,7 +1527,7 @@ void Multistage2026::Spawn(int type, int current) {
         }
         break;
 
-case TSTAGE:
+    case TSTAGE:
         // 1. Use a reference to avoid calling .at() repeatedly
         { STAGE &S = stage[current];
 
@@ -1714,55 +1699,78 @@ case TSTAGE:
 void Multistage2026::Jettison(int type, int current) {
     switch (type) {
     case TBOOSTER:
+        oapiWriteLogV("DEBUG JETTISON: Initiating TBOOSTER %d separation.", current);
         Spawn(type, current);
+        oapiWriteLogV("DEBUG JETTISON: Spawn() completed successfully.");
 
+        // 1. Delete the Meshes
+        oapiWriteLogV("DEBUG JETTISON: Deleting %d meshes...", booster.at(current).N);
         for (int i = 1; i < booster.at(current).N + 1; i++) {
+            oapiWriteLogV("   -> Deleting Mesh Index %d (Handle: %p)", i, booster.at(current).msh_idh[i]);
             DelMesh(booster.at(current).msh_idh[i]);
         }
 
-        DelThrusterGroup(booster.at(current).Thg_boosters_h, false);
-        DelPropellantResource(booster.at(current).tank);
-        currentBooster += 1;
+        // 2. Delete the Thrusters
+        oapiWriteLogV("DEBUG JETTISON: Deleting %d Thrusters...", booster.at(current).N);
+        for (int bn = 0; bn < booster.at(current).N; bn++) {
+            if (booster.at(current).th_booster_h.at(bn) != NULL) {
+                oapiWriteLogV("   -> Deleting Thruster Handle %p", booster.at(current).th_booster_h.at(bn));
+                DelThruster(booster.at(current).th_booster_h.at(bn));
+                booster.at(current).th_booster_h.at(bn) = NULL;
+            } else {
+                oapiWriteLogV("   -> Thruster Handle %d was already NULL. Skipping.", bn);
+            }
+        }
 
+        // 3. Delete the Thruster Group
+        oapiWriteLogV("DEBUG JETTISON: Checking Thruster Group...");
+        if (booster.at(current).Thg_boosters_h != NULL) {
+            oapiWriteLogV("   -> Deleting Thruster Group Handle %p", booster.at(current).Thg_boosters_h);
+            DelThrusterGroup(booster.at(current).Thg_boosters_h, false);
+            booster.at(current).Thg_boosters_h = NULL;
+        }
+
+        // 4. Delete the Propellant Tank
+        oapiWriteLogV("DEBUG JETTISON: Checking Propellant Tank...");
+        if (booster.at(current).tank != NULL) {
+            oapiWriteLogV("   -> Deleting Tank Handle %p", booster.at(current).tank);
+            DelPropellantResource(booster.at(current).tank);
+            booster.at(current).tank = NULL;
+        }
+
+        currentBooster += 1;
+        oapiWriteLogV("DEBUG JETTISON: Updating Mass and PMI...");
         UpdateMass();
         UpdatePMI();
 
         if (currentBooster >= nBoosters) wBoosters = false;
+        oapiWriteLogV("DEBUG JETTISON: TBOOSTER separation routine complete.");
         break;
+    case TSTAGE:
+        oapiWriteLogV("DEBUG JETTISON: Initiating TSTAGE %d separation.", current);
+        Spawn(type, current);
+        oapiWriteLogV("DEBUG JETTISON: Spawn() completed successfully.");
 
-case TSTAGE:
-        {
-        // 1. Use a local index to keep the math clear before we increment the global state
-        int oldStage = current; // 'current' is passed into Jettison()
-
-        Spawn(type, oldStage);
-
-        // 2. Cleanup old stage resources
-        // Replaced .at() with []
-        DelMesh(stage[oldStage].msh_idh);
+        oapiWriteLogV("DEBUG JETTISON: Clearing Thruster Definitions for entire vessel...");
         ClearThrusterDefinitions();
-        DelPropellantResource(stage[oldStage].tank);
 
-        // 3. Move to the next stage
+        oapiWriteLogV("DEBUG JETTISON: Checking Propellant Tank...");
+        if (stage.at(current).tank != NULL) {
+            oapiWriteLogV("   -> Deleting Tank Handle %p", stage.at(current).tank);
+            DelPropellantResource(stage.at(current).tank);
+            stage.at(current).tank = NULL;
+        }
+
+        oapiWriteLogV("DEBUG JETTISON: Deleting Stage Mesh...");
+        DelMesh(stage.at(current).msh_idh);
+
         currentStage += 1;
-
+        oapiWriteLogV("DEBUG JETTISON: Updating Mass and PMI...");
         UpdateMass();
         UpdatePMI();
 
-        // 4. Initialize the next stage's systems
-        CreateUllageAndBolts();
-        CreateMainThruster();
-        CreateRCS();
-
-        // 5. Shift Center of Gravity
-        // Logic: Shift by the difference between the NEW stage (currentStage) 
-        // and the OLD stage (oldStage)
-        if (currentStage < nStages) {
-            double offsetShift = stage[currentStage].off.z - stage[oldStage].off.z;
-            ShiftCG(_V(0, 0, offsetShift));
-        }
-        SetCameraOffset(_V(0, 0, 0));
-        break;}
+        oapiWriteLogV("DEBUG JETTISON: TSTAGE separation routine complete.");
+        break;
 
     case TPAYLOAD:
         Spawn(type, current);
@@ -1821,7 +1829,6 @@ case TSTAGE:
 // ==============================================================
 // Flight Logic & Automation
 // ==============================================================
-
 void Multistage2026::InitializeDelays() {
     // Initialize booster burn delays (only if stage 0 and MET > 0)
     if ((currentStage == 0) && (MET > 0)) {
@@ -1841,38 +1848,62 @@ void Multistage2026::InitializeDelays() {
 }
 
 void Multistage2026::AutoJettison() {
+    if (Configuration == 0) return; // Safety: Ground vessels don't jettison
 
-    // 1. Safety Check for Booster Jettison
-    if (currentBooster < nBoosters) {
-        // Guard: Only query if the tank handle is NOT NULL
-        if (booster.at(currentBooster).tank != nullptr) {
-            if (GetPropellantMass(booster.at(currentBooster).tank) <= 0.000001) {
-                Jettison(TBOOSTER, currentBooster);
+// 1. Boosters
+    for (int i = 0; i < nBoosters; i++) {
+        if (booster[i].tank != NULL) { 
+            // ==========================================
+            // BULLETPROOF POINTER VERIFICATION
+            // ==========================================
+            bool validHandle = false;
+            int pCount = GetPropellantCount();
+            for (int k = 0; k < pCount; k++) {
+                // If our booster tank matches a real Orbiter tank, it's safe!
+                if (GetPropellantHandleByIndex(k) == booster[i].tank) {
+                    validHandle = true;
+                    break;
+                }
             }
-        } else {
-            // If the tank is NULL but we have boosters, jettison them to prevent a hang
-            // (Optional: You can comment this out if it drops them too early)
-            Jettison(TBOOSTER, currentBooster);
+            // Only query the mass if the handle is 100% verified
+            if (validHandle) {
+                double mass = GetPropellantMass(booster[i].tank);
+                //oapiWriteLogV("JETTISON: Booster %d Mass= %.1f", i, mass);
+                if (mass <= 10.0) { 
+                    oapiWriteLogV("JETTISON: FIRING EXPLOSIVE BOLTS FOR BOOSTER %d!", i);
+                    Jettison(TBOOSTER, i); 
+                    booster[i].tank = NULL;
+                    currentBooster++; 
+                    return; // EXIT FRAME
+                }
+            } else {
+                // We caught the garbage pointer! Neutralize it so it never checks again.
+                oapiWriteLogV("JETTISON: Caught garbage pointer in Booster %d. Value: %p", i, booster[i].tank);
+                booster[i].tank = NULL; 
+            }
         }
     }
 
-    // 2. Safety Check for Stage Jettison
+    // 2. Main Stages
     if (currentStage < nStages - 1) {
         // Block stage jettison until boosters are gone
         if ((currentStage == 0) && (currentBooster < nBoosters)) { return; }
 
-        // Guard: Verify stage tank before querying mass
         if (stage.at(currentStage).tank != nullptr) {
-            // Note: 0.1 threshold handles floating point rounding errors better than 0.0
             if (GetPropellantMass(stage.at(currentStage).tank) <= 0.1) {
+                oapiWriteLogV("JETTISON: Jettisoning Stage %d", currentStage);
                 Jettison(TSTAGE, currentStage);
+                return; // EXIT FRAME
             }
         }
     }
 
-    // 3. Interstage Jettison
+    // 3. Interstages (Safe logic)
+    // Check wInter for the current active stage AFTER handling stage jettison above
     if (stage.at(currentStage).wInter == true && stage.at(currentStage).interstage.currDelay <= 0) {
+        oapiWriteLogV("AUTO: Jettisoning Interstage for Stage %d", currentStage);
         Jettison(TINTERSTAGE, currentStage);
+        return; // EXIT FRAME
     }
 }
 
@@ -2511,57 +2542,59 @@ void Multistage2026::FLY(double simtime, double simdtime, double mjdate) {
         oapiWriteLogV("%s Stage n: %i ignited @%.1f", GetName(), currentStage + 1, stage.at(currentStage).IgnitionTime);
     }
 
-    // 5. Booster Ignition & Thrust Curve Logic
-    if ((wBoosters) && (GetThrusterGroupLevel(THGROUP_MAIN) > 0.95)) {
+    // 5. Booster Thrust Curve Logic (Ignition now handled by VinkaConsumeStep)
+    if (wBoosters) {
         for (int kb = currentBooster; kb < nBoosters; kb++) {
-            if (booster.at(kb).currDelay <= 0) {
+            // Only process boosters that Otto has already ignited
+            if (booster.at(kb).Ignited == true) {
+                // Calculate time elapsed since this specific booster's ignition
+                double btime = MET - booster.at(kb).IgnitionTime;
+                double Level = 1.0;
 
-                // A. Ignition Event
-                if (booster.at(kb).Ignited == false) {
-                    booster.at(kb).Ignited = true; // Fixed: use bool true
-                    booster.at(kb).IgnitionTime = MET;
-                    oapiWriteLogV("%s Booster n: %i ignited @%.1f", GetName(), kb + 1, booster.at(kb).IgnitionTime);
-                }
-                // B. Thrust Curve Calculation
-                else {
-                    double btime = MET - booster.at(kb).IgnitionTime;
-                    double Level = 1.0;
-
-                    // Linear interpolation of thrust curve points
-                    for (int qq = 0; qq < 10; qq++) {
-                        if (btime > booster.at(kb).curve[qq].x) {
-                            double m, q_const;
-                            if (qq < 9) {
-                                if (btime < booster.at(kb).curve[qq + 1].x) {
-                                    m = (booster.at(kb).curve[qq + 1].y - booster.at(kb).curve[qq].y) / (booster.at(kb).curve[qq + 1].x - booster.at(kb).curve[qq].x);
-                                    q_const = booster.at(kb).curve[qq].y - m * booster.at(kb).curve[qq].x;
-                                    Level = (m * btime + q_const) / 100.0;
-                                }
-                            } else {
-                                // Last curve segment
-                                m = (booster.at(kb).curve[qq].y - booster.at(kb).curve[qq].y) / (booster.at(kb).curve[qq].x - booster.at(kb).curve[qq].x);
+                // Linear interpolation of thrust curve points
+                for (int qq = 0; qq < 10; qq++) {
+                    if (btime > booster.at(kb).curve[qq].x) {
+                        double m, q_const;
+                        if (qq < 9) {
+                            if (btime < booster.at(kb).curve[qq + 1].x) {
+                                m = (booster.at(kb).curve[qq + 1].y - booster.at(kb).curve[qq].y) / (booster.at(kb).curve[qq + 1].x - booster.at(kb).curve[qq].x);
                                 q_const = booster.at(kb).curve[qq].y - m * booster.at(kb).curve[qq].x;
                                 Level = (m * btime + q_const) / 100.0;
                             }
+                        } else {
+                            // Last curve segment interpolation
+                            m = (booster.at(kb).curve[qq].y - booster.at(kb).curve[qq - 1].y) / (booster.at(kb).curve[qq].x - booster.at(kb).curve[qq - 1].x);
+                            q_const = booster.at(kb).curve[qq].y - m * booster.at(kb).curve[qq].x;
+                            Level = (m * btime + q_const) / 100.0;
                         }
                     }
+                }
 
-                    // --- PATCH APPLIED HERE: NULL HANDLE GUARD ---
-                    if (booster.at(kb).Thg_boosters_h != NULL) {
-                        SetThrusterGroupLevel(booster.at(kb).Thg_boosters_h, Level);
-                    } else {
-                        // Optional debug to trace why the handle is missing
-                        // oapiWriteLogV("DEBUG: Booster %i ignition attempted with NULL group handle", kb + 1);
-                    }
+                // Safety Guard: Ensure the level never drops below 0 due to curve math
+                if (Level < 0) Level = 0;
+
+                // Apply the calculated thrust level to the specific booster group
+                if (booster.at(kb).Thg_boosters_h != NULL) {
+                    SetThrusterGroupLevel(booster.at(kb).Thg_boosters_h, Level);
                 }
             }
         }
     }
+
     // 6. Guidance (Vinka Autopilot)
     if (APstat) {
         VinkaAutoPilot();
         if (Misc.GNC_Debug == 1) Guidance_Debug();
-        if (MET > VinkaFindEndTime()) {
+        double endTime = VinkaFindEndTime();
+        // Add a spy log right here to see what the computer thinks the end time is
+        static double lastEndTimeLog = 0;
+        //if (oapiGetSimTime() - lastEndTimeLog > 5.0) {
+        //    oapiWriteLogV("OTTO DIAGNOSTIC: AP is ALIVE. MET: %.1f | EndTime: %.1f", MET, endTime);
+        //    lastEndTimeLog = oapiGetSimTime();
+        //}
+        // GUARDED SHUTDOWN: Only kill the AP if the end time is actually valid (> 0)
+        if (MET > endTime && endTime > 0.1) {
+            oapiWriteLogV("OTTO: Mission Complete. AP Shutdown at MET %.1f (EndTime: %.1f)", MET, endTime);
             killAP();
             APstat = false;
         }
@@ -2842,7 +2875,6 @@ void Multistage2026::clbkLoadStateEx(FILEHANDLE scn, void* vs)
         currentInterstage = 0;
     }
 
-    UpdateOffsets();
     LoadMeshes();
 
     if (Gnc_running == 1) {
@@ -2862,104 +2894,123 @@ void Multistage2026::clbkLoadStateEx(FILEHANDLE scn, void* vs)
     loadedMET = MET;
     loadedGrowing = GrowingParticles;
 
-    oapiWriteLogV("Load State Terminated");
+    oapiWriteLogV("Load State Completed");
 }
 
 // ==============================================================
 // Input Handling (Keyboard)
 // ==============================================================
-
-// Updated signature to match header
 int Multistage2026::clbkConsumeBufferedKey(int key, bool down, char* kstate) {
-
+    // Only trigger on the key-down event
     if (!down) return 0;
 
-    // 'J' Key: Jettison Logic
-    if (KEYDOWN(kstate, OAPI_KEY_J) && (!KEYMOD_CONTROL(kstate)) && (!KEYMOD_SHIFT(kstate) && (!KEYMOD_ALT(kstate)))) {
-        if (currentBooster < nBoosters) {
-            Jettison(TBOOSTER, currentBooster);
-        }
-        else {
-            if (currentStage < nStages - 1) {
-                if (stage.at(currentStage).wInter == TRUE) {
+    switch (key) {
+
+        // ------------------------------------------------------
+        // 'P' Key: Toggle Autopilot
+        // ------------------------------------------------------
+        case OAPI_KEY_P:
+            if (!KEYMOD_CONTROL(kstate) && !KEYMOD_SHIFT(kstate)) {
+                APstat = !APstat;
+                oapiWriteLogV("DEBUG: P-Key Pressed! Autopilot is now: %s", APstat ? "ON" : "OFF");
+                return 1;
+            }
+            break;
+
+        // ------------------------------------------------------
+        // 'J' Key: Jettison Logic (Manual Staging)
+        // ------------------------------------------------------
+        case OAPI_KEY_J:
+            if (!KEYMOD_CONTROL(kstate) && !KEYMOD_SHIFT(kstate)) {
+                oapiWriteLogV("DEBUG: J-Key Pressed! Evaluating Staging...");
+                
+                if (currentBooster < nBoosters) {
+                    Jettison(TBOOSTER, currentBooster);
+                    return 1;
+                } 
+                else if (currentStage < nStages - 1) {
+                    if (stage.at(currentStage).wInter == TRUE) {
+                        Jettison(TINTERSTAGE, currentStage);
+                    } else {
+                        Jettison(TSTAGE, currentStage);
+                    }
+                    return 1;
+                } 
+                else if ((currentStage == nStages - 1) && (stage.at(currentStage).wInter)) {
                     Jettison(TINTERSTAGE, currentStage);
-                } else {
-                    Jettison(TSTAGE, currentStage);
-                }
-            }
-            else if ((currentStage == nStages - 1) && (stage.at(currentStage).wInter)) {
-                Jettison(TINTERSTAGE, currentStage);
-            }
-            else {
-                if ((currentPayload < nPayloads) && (wFairing == 0)) {
+                    return 1;
+                } 
+                else if ((currentPayload < nPayloads) && (wFairing == 0)) {
                     Jettison(TPAYLOAD, currentPayload);
-                } else {
-                    return 0;
+                    return 1;
+                }
+                
+                oapiWriteLogV("DEBUG: J-Key Ignored. Nothing left to jettison.");
+                return 0;
+            }
+            break;
+
+        // ------------------------------------------------------
+        // 'F' Key: Fairing / LES Jettison
+        // ------------------------------------------------------
+        case OAPI_KEY_F:
+            if (!KEYMOD_CONTROL(kstate) && !KEYMOD_SHIFT(kstate)) {
+                if (wLes) {
+                    oapiWriteLogV("DEBUG: F-Key Pressed! Jettisoning LES.");
+                    Jettison(TLES, 0);
+                    return 1;
+                } 
+                else if (wFairing == 1) { 
+                    oapiWriteLogV("DEBUG: F-Key Pressed! Jettisoning Fairing.");
+                    Jettison(TFAIRING, 0); 
+                    return 1;
+                }
+                return 0; // Nothing to jettison
+            }
+            break;
+
+        // ------------------------------------------------------
+        // 'CTRL+L': Hangar Logic (Launch)
+        // ------------------------------------------------------
+        case OAPI_KEY_L:
+            if (KEYMOD_CONTROL(kstate) && !KEYMOD_ALT(kstate)) {
+                if (HangarMode) {
+                    char kstate_send[256];
+                    for (int i = 0; i < 256; i++) kstate_send[i] = 0x00;
+                    kstate_send[OAPI_KEY_L] = 0x80;
+                    kstate_send[OAPI_KEY_LCONTROL] = 0x80;
+                    vhangar->SendBufferedKey(OAPI_KEY_L, TRUE, kstate_send);
+                    return 1;
                 }
             }
-        }
-        oapiWriteLog((char*)"DEBUG: J-Key Called!");
-        return 1;
-    }
+            break;
 
-    // 'F' Key: Fairing / LES Jettison
-    if (KEYDOWN(kstate, OAPI_KEY_F) && (!KEYMOD_CONTROL(kstate)) && (!KEYMOD_SHIFT(kstate) && (!KEYMOD_ALT(kstate)))) {
-        if (wLes) {
-            Jettison(TLES, 0);
-        } else {
-            if (wFairing == 1) { 
-                Jettison(TFAIRING, 0); 
-            } else { 
-                return 0; 
-            }
-        }
-        oapiWriteLog((char*)"DEBUG: F-Key Called!");
-        return 1;
-    }
+        // ------------------------------------------------------
+        // 'CTRL+D': Hangar Logic (Detach/Attach Pad)
+        // ------------------------------------------------------
+        case OAPI_KEY_D:
+            if (KEYMOD_CONTROL(kstate) && !KEYMOD_ALT(kstate)) {
+                if (HangarMode) {
+                    char kstate_send[256];
+                    for (int i = 0; i < 256; i++) kstate_send[i] = 0x00;
+                    kstate_send[OAPI_KEY_D] = 0x80;
+                    kstate_send[OAPI_KEY_LCONTROL] = 0x80;
+                    vhangar->SendBufferedKey(OAPI_KEY_D, TRUE, kstate_send);
 
-    // 'P' Key: Toggle Autopilot
-    if (KEYDOWN(kstate, OAPI_KEY_P) && (!KEYMOD_CONTROL(kstate)) && (!KEYMOD_SHIFT(kstate) && (!KEYMOD_ALT(kstate)))) {
-        if (!APstat) { APstat = TRUE; return 0; }
-        else if (APstat) { APstat = false; return 0; }
-        else { return 0; }
-        oapiWriteLog((char*)"DEBUG: P-Key Called!");
-        return 1;
-    }
-
-    // NOTE: Removed CTRL+SPACE (Developer Mode) handler to prevent Windows Dialog crashes.
-
-    // 'CTRL+L': Hangar Logic (Launch)
-    if (KEYDOWN(kstate, OAPI_KEY_L) && (KEYMOD_CONTROL(kstate)) && (!KEYMOD_ALT(kstate) && (!KEYMOD_SHIFT(kstate)))) {
-        if (HangarMode) {
-            char kstate_send[256];
-            for (int i = 0; i < 256; i++) kstate_send[i] = 0x00;
-            kstate_send[OAPI_KEY_L] = 0x80;
-            kstate_send[OAPI_KEY_LCONTROL] = 0x80;
-            vhangar->SendBufferedKey(OAPI_KEY_L, TRUE, kstate_send);
-            return 1;
-        }
-    }
-
-    // 'CTRL+D': Hangar Logic (Detach/Attach Pad)
-    if (KEYDOWN(kstate, OAPI_KEY_D) && (KEYMOD_CONTROL(kstate)) && (!KEYMOD_ALT(kstate) && (!KEYMOD_SHIFT(kstate)))) {
-        if (HangarMode) {
-            char kstate_send[256];
-            for (int i = 0; i < 256; i++) kstate_send[i] = 0x00;
-            kstate_send[OAPI_KEY_D] = 0x80;
-            kstate_send[OAPI_KEY_LCONTROL] = 0x80;
-            vhangar->SendBufferedKey(OAPI_KEY_D, TRUE, kstate_send);
-
-            if (!AttToMSPad) {
-                OBJHANDLE hPad = oapiGetObjectByName((char*)"MS_Pad");
-                if (oapiIsVessel(hPad)) {
-                    AttachToMSPad(hPad);
-                    AttToMSPad = TRUE;
+                    if (!AttToMSPad) {
+                        OBJHANDLE hPad = oapiGetObjectByName((char*)"MS_Pad");
+                        if (oapiIsVessel(hPad)) {
+                            AttachToMSPad(hPad);
+                            AttToMSPad = TRUE;
+                        }
+                    }
+                    return 1;
                 }
             }
-            return 1;
-        }
+            break;
     }
 
+    // If the key pressed wasn't any of the cases above, let Orbiter handle it.
     return 0;
 }
 
@@ -3068,12 +3119,30 @@ void Multistage2026::clbkSaveState(FILEHANDLE scn) {
 // ==============================================================
 void Multistage2026::clbkPreStep(double simt, double simdt, double mjd) {
 
-    // 1. Autopilot Pre-Launch Logic
+    // 1. Autopilot Execution (Must run EVERY frame if engaged)
+    if (APstat) {
+        VinkaAutoPilot(); // Otto is now free to fly in Config 0 AND Config 1
+        if (Misc.GNC_Debug == 1) Guidance_Debug();
+    }
+
+    // 1b. Pre-Launch Clock & Delay Sync (Only while on pad)
     if ((APstat) && (Configuration == 0)) {
-        VinkaAutoPilot();
         MET += simdt;
         stage[0].currDelay = -MET; // Sync delays while waiting on pad
-        if (Misc.GNC_Debug == 1) Guidance_Debug();
+    }
+    // 1c. Broadcast Telemetry to the Lua MFD Data Bus
+    if (hBus_AP) SetThrusterMax0(hBus_AP, APstat ? 1.0 : 0.0);
+    if (hBus_Config) SetThrusterMax0(hBus_Config, (double)Configuration);
+    if (hBus_Prog) SetThrusterMax0(hBus_Prog, (double)VinkaStatus);
+
+    // ==========================================
+    // THE C++ BROADCAST SPY
+    // ==========================================
+    static double last_bus_spy = 0;
+    if (oapiGetSimTime() - last_bus_spy > 1.0) {
+        oapiWriteLogV("SPY [C++ BUS]: AP=%d | Config=%d | Prog=%d", 
+                      APstat, Configuration, VinkaStatus);
+        last_bus_spy = oapiGetSimTime();
     }
 
     // 2. Pad Detachment Logic (Launchpad Object)
@@ -3116,49 +3185,25 @@ void Multistage2026::clbkPreStep(double simt, double simdt, double mjd) {
     if (wFailures) {
         if (CheckForFailure(MET)) Failure();
     }
-    // --- NEW FLIGHT DYNAMICS LOGGING ---
-    //static double logTimer = 0;
-    //logTimer += simdt;
 
-    //if (logTimer >= 1.0) { // Log once per second
-        //VECTOR3 totalThrustVec;
-        //GetThrustVector(totalThrustVec);
-        //double currentThrust = length(totalThrustVec);
-        //double currentMass = GetMass();
-        //double weight = currentMass * 9.80665;
-        //double twr = (weight > 0) ? currentThrust / weight : 0;
-        //double verticalAcc = (currentThrust - weight) / currentMass;
-
-        //if (Configuration == 1 && MET < 30.0) { // Only log during initial ascent
-        //    sprintf(logbuff, "SLS ASCENT: MET: %.1f | Thrust: %.2f MN | TWR: %.2f | Accel: %.2f m/s^2", 
-        //            MET, currentThrust / 1e6, twr, verticalAcc);
-        //    oapiWriteLog(logbuff);
-        //}
-        //logTimer = 0;
-    //}
-    // Throttle: Log only once per second
-    static double last_log_time = 0;
-    if (simt - last_log_time > 1.0) {
-        last_log_time = simt;
-
-        VECTOR3 pos, vel, rot;
-        GetGlobalPos(pos);       // Global position
-        GetGlobalVel(vel);       // Global velocity
-        double alt = GetAltitude();
-        double pitch = GetPitch() * DEG;
-        double bank = GetBank() * DEG;
-        bool ground = GroundContact();
+    // 6. Logging only once per second
+    // static double last_log_time = 0;
+    //if (simt - last_log_time > 1.0) {
+    //    last_log_time = simt;
+    //    VECTOR3 pos, vel, rot;
+    //    GetGlobalPos(pos);       // Global position
+    //    GetGlobalVel(vel);       // Global velocity
+    //    double alt = GetAltitude();
+    //    double pitch = GetPitch() * DEG;
+    //    double bank = GetBank() * DEG;
+    //    bool ground = GroundContact();
 
         // LOG FORMAT: Time | Alt | Pitch | Bank | GroundContact | Vertical Speed
-        oapiWriteLogV("TELEMETRY [T+%.0f]: Alt: %.2f m | Pitch: %.2f | Bank: %.2f | Ground: %s | VS: %.2f m/s", 
-            simt, 
-            alt, 
-            pitch, 
-            bank, 
-            ground ? "YES" : "NO", 
-            vel.y // Rough vertical speed in global frame (approx)
-        );
-    }
+    //    oapiWriteLogV("TELEMETRY [T+%.0f]: Alt: %.2f m | Pitch: %.2f | Bank: %.2f | Ground: %s | VS: %.2f m/s", 
+    //        simt,alt, pitch, bank, ground ? "YES" : "NO", vel.y 
+    // Rough vertical speed in global frame (approx)
+    //    );
+    //}
 }
 
 // ==============================================================
@@ -3167,9 +3212,9 @@ void Multistage2026::clbkPreStep(double simt, double simdt, double mjd) {
 void Multistage2026::clbkPostStep(double simt, double simdt, double mjd) {
 
     // 1. Detect Liftoff Transition
-    // Once thrust is established and we are in launch config, start MET
-    if (GetThrusterGroupLevel(THGROUP_MAIN) > 0.95 && Configuration == 0) {
-        oapiWriteLog((char*)"DEBUG: clbkPostStep - LIFTOFF DETECTED!");
+    // Once thrust is established and we are in launch config, restart MET
+    if (GetThrusterGroupLevel(THGROUP_MAIN) > 0.05 && Configuration == 0) {
+        oapiWriteLogV("Ignition Sequence Start - Configuration 1");
         Configuration = 1;
         MET = 0;
     }
@@ -3624,22 +3669,9 @@ int Multistage2026::GetAutopilotStatus() const {
 // ==============================================================
 int Multistage2026::clbkGeneric(int msgid, int prm, void* context) {
     switch (msgid) {
-        case 0x1000: // Placeholder: Replace with the actual ID used by the Lua Spy
-            if (context) {
-                VECTOR3 thrustVec;
-                GetThrustVector(thrustVec);
-                *(double*)context = length(thrustVec);
-                return 1;
-            }
-            break;
-        case 0x1001: // NEW: TWR Query for SpyMS26
-            if (context) {
-                VECTOR3 thrustVec;
-                GetThrustVector(thrustVec);
-                *(double*)context = length(thrustVec) / (GetMass() * 9.80665);
-                return 1;
-            }
-            break;
+        // ==========================================
+        // CORE SYSTEM HANDSHAKES & COMMANDS
+        // ==========================================
         case VMSG_MS26_IDENTIFY:
             return VMSG_MS26_IDENTIFY;
         case VMSG_MS26_GETDATA:
@@ -3657,33 +3689,28 @@ int Multistage2026::clbkGeneric(int msgid, int prm, void* context) {
             // Add jettison logic
             return 1;
         case VMSG_MS26_ADD_STEP:
-            VinkaAddStep((char*)context); // Cast back to char*
+            VinkaAddStep((char*)context); 
             return 1;
         case VMSG_MS26_LOAD_TLM:
             parseTelemetryFile((char*)context);
             return 1;
         case VMSG_MS26_SET_PMC:
-            // Cast context to double pointer, then dereference
             SetPegMajorCycleInterval(*(double*)context); 
             return 1;
-        case VMSG_MS26_SET_ALT:
-            {
+        case VMSG_MS26_SET_ALT: {
             double* steps = (double*)context;
             SetNewAltSteps(steps[0], steps[1], steps[2], steps[3]);
-            }
             return 1;
+        }
         case VMSG_MS26_SET_PITCHLIMIT:
-            SetPegPitchLimit(*(double*)context); // Dereference the pointer
+            SetPegPitchLimit(*(double*)context); 
             return 1;
-        // SAFETY NET: If a Lua script asks for a value we don't handle,
-        // return a safe default instead of allowing a 'nil' error.
+        // ==========================================
+        // DEFAULT (UNHANDLED MESSAGES)
+        // ==========================================
         default:
-            if (context != nullptr) {
-                // Providing a 0.0 default prevents "attempt to call nil"
-                // if the Lua script is written to expect a number.
-                *(double*)context = 0.0; 
-                return 1; 
-            }
+            // Safely ignore unknown messages. 
+            // Returning 0 tells the calling script "I don't support this command."
             return 0;
     }
     return 0;
@@ -3735,16 +3762,19 @@ void Multistage2026::WriteGNCFile() {}
 void Multistage2026::GetAttitudeRotLevel(VECTOR3& level) { level = _V(0,0,0); }
 void dummy() {}
 
-double Multistage2026::GetPropellantMass(PROPELLANT_HANDLE hProp) { 
-    // Strict Validity Check
-    // If the address is outside expected bounds or NULL, abort the query
+double Multistage2026::GetPropellantMass(PROPELLANT_HANDLE hProp) {
+    // 1. Pointer Sanitation: Block NULL or obviously invalid addresses
     if (hProp == nullptr || (uintptr_t)hProp < 0x1000) {
-        oapiWriteLog((char*)"SLS DEBUG: Blocked invalid/null propellant handle.");
+       oapiWriteLogV("GPM called with a null pointer");
         return 0.0;
     }
 
-    // 3. Optional: Verify handle exists in the vessel's internal list
-    // (This prevents the 0x7575... garbage pointer from hitting the core)
+    // 2. State Check: Ensure the vessel has finished VehicleSetup
+    if (!bVesselInitialized) {
+        return 0.0;
+    }
+
+    // 3. Core Call: Only pass to the engine once verified
     return VESSEL::GetPropellantMass(hProp);
 }
 
