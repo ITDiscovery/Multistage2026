@@ -1256,13 +1256,30 @@ void Multistage2026::UpdateLivePayloads() {
 
 //  Returns the particlestream specification to use or the empty one if not found
 PARTICLE Multistage2026::GetProperPS(char name[MAXLEN]) {
-    for (int z = 0; z < MAXLEN; z++) name[z] = tolower(name[z]);
+    // 1. Create a local copy to prevent buffer overruns and const-cast violations
+    char local_name[MAXLEN];
+    strncpy(local_name, name, MAXLEN - 1);
+    local_name[MAXLEN - 1] = '\0';
+    // 2. Safely lowercase ONLY the actual length of the target string
+    size_t len = strlen(local_name);
+    for (size_t z = 0; z < len; z++) {
+        local_name[z] = tolower(local_name[z]);
+    }
     char checktxt[MAXLEN];
     for (int nt = 0; nt < 16; nt++) {
-        for (int k = 0; k < MAXLEN; k++) checktxt[k] = Particle[nt].ParticleName[k];
-        for (int z = 0; z < MAXLEN; z++) checktxt[z] = tolower(checktxt[z]);
-        if (strncmp(name, checktxt, MAXLEN - 5) == 0) return Particle[nt];
+        // 3. Safely copy the reference name
+        strncpy(checktxt, Particle[nt].ParticleName, MAXLEN - 1);
+        checktxt[MAXLEN - 1] = '\0';
+        size_t check_len = strlen(checktxt);
+        for (size_t z = 0; z < check_len; z++) {
+            checktxt[z] = tolower(checktxt[z]);
+        }
+        // 4. Compare safely
+        if (len > 0 && strncmp(local_name, checktxt, MAXLEN - 5) == 0) {
+            return Particle[nt];
+        }
     }
+    // Fallback if not found
     return Particle[15];
 }
 
@@ -1485,6 +1502,7 @@ void Multistage2026::VehicleSetup() {
 void Multistage2026::Spawn(int type, int current) {
 
     char mn[MAXLEN];
+    char flat_name[256];
     VESSELSTATUS2 vs;
     memset(&vs, 0, sizeof(vs));
     vs.version = 2;
@@ -1522,7 +1540,14 @@ void Multistage2026::Spawn(int type, int current) {
             strcpy(mn, booster.at(current).meshname.c_str());
             strcat(mn, mn2);
 
-            oapiCreateVesselEx(mn, booster.at(current).module.c_str(), &vs);
+            // Spawn using the pre-generated config file
+            strncpy(flat_name, mn, 255);
+            flat_name[255] = '\0';
+            for (int k = 0; flat_name[k] != '\0'; k++) {
+                if (flat_name[k] == '/' || flat_name[k] == '\\') flat_name[k] = '_';
+            }
+            oapiCreateVesselEx(mn, flat_name, &vs);
+
             oapiWriteLogV("%s: Booster n.%i jettisoned name: %s @%.3f", GetName(), current + 1, mn, MET);
         }
         break;
@@ -1542,11 +1567,21 @@ void Multistage2026::Spawn(int type, int current) {
         vs.rvel = rvel + rofs;
         vs.vrot = vrot + S.rot_speed;
 
-        // 4. FIX: meshname and module are now char arrays (no .c_str())
+        // 4. FIX: meshname is a char array
         strncpy(mn, S.meshname, 255);
+        mn[255] = '\0'; // Safety termination
 
-        // 5. FIX: Call oapiCreateVesselEx with the raw char pointers
-        oapiCreateVesselEx(mn, S.module, &vs);
+        // --- FLATTEN NAME AND SPAWN ---
+        strncpy(flat_name, mn, 255);
+        flat_name[255] = '\0';
+        for (int k = 0; flat_name[k] != '\0'; k++) {
+            if (flat_name[k] == '/' || flat_name[k] == '\\') flat_name[k] = '_';
+        }
+
+        // 5. FIX: Call oapiCreateVesselEx with the flattened config name
+        oapiCreateVesselEx(mn, flat_name, &vs);
+        // ------------------------------
+
         oapiWriteLogV("%s: Stage n.%i jettisoned name: %s @%.3f", GetName(), current + 1, mn, MET);
 
         stage_ignition_time = MET;
@@ -1645,7 +1680,14 @@ void Multistage2026::Spawn(int type, int current) {
             strcpy(mn, fairing.meshname.c_str());
             strcat(mn, mn2);
 
-            oapiCreateVesselEx(mn, fairing.module.c_str(), &vs);
+            // Spawn using the pre-generated config file
+            strncpy(flat_name, mn, 255);
+            flat_name[255] = '\0';
+            for (int k = 0; flat_name[k] != '\0'; k++) {
+                if (flat_name[k] == '/' || flat_name[k] == '\\') flat_name[k] = '_';
+            }
+            oapiCreateVesselEx(mn, flat_name, &vs);
+
             oapiWriteLogV("%s: Fairing jettisoned: name %s @%.3f", GetName(), mn, MET);
         }
         break;
@@ -1666,7 +1708,16 @@ void Multistage2026::Spawn(int type, int current) {
 
         strcpy(mn, stage.at(current).interstage.meshname.c_str());
 
-        oapiCreateVesselEx(mn, stage.at(current).interstage.module.c_str(), &vs);
+        // Spawn using the pre-generated config file
+        strncpy(flat_name, mn, 255);
+        flat_name[255] = '\0';
+        for (int k = 0; flat_name[k] != '\0'; k++) {
+            if (flat_name[k] == '/' || flat_name[k] == '\\') flat_name[k] = '_';
+        }
+
+        // Spawn using the pre-generated config file
+        oapiCreateVesselEx(mn, flat_name, &vs);
+
         oapiWriteLogV("%s: Interstage of stage %i jettisoned name: %s @%.3f", GetName(), current + 1, mn, MET);
         break;
 
@@ -1686,7 +1737,14 @@ void Multistage2026::Spawn(int type, int current) {
 
         strcpy(mn, Les.meshname.c_str());
 
-        oapiCreateVesselEx(mn, Les.module.c_str(), &vs);
+        // Spawn using the pre-generated config file
+        strncpy(flat_name, mn, 255);
+        flat_name[255] = '\0';
+        for (int k = 0; flat_name[k] != '\0'; k++) {
+            if (flat_name[k] == '/' || flat_name[k] == '\\') flat_name[k] = '_';
+        }
+
+        oapiCreateVesselEx(mn, flat_name, &vs);
         oapiWriteLogV("%s: Les jettisoned name: %s @%.3f", GetName(), mn, MET);
         break;
     }
@@ -1769,6 +1827,14 @@ void Multistage2026::Jettison(int type, int current) {
         UpdateMass();
         UpdatePMI();
 
+        // --- REBUILD THE ROCKET PHYSICS ---
+        oapiWriteLogV("DEBUG JETTISON: Initializing engines for new Stage %d", currentStage);
+        CreateMainThruster();
+        CreateRCS();
+        hBus_AP     = CreateThruster(_V(1.0, 999.0, 0.0), _V(0,1,0), 0.0, NULL, 0.0);
+        hBus_Config = CreateThruster(_V(2.0, 999.0, 0.0), _V(0,1,0), 0.0, NULL, 0.0);
+        hBus_Prog   = CreateThruster(_V(3.0, 999.0, 0.0), _V(0,1,0), 0.0, NULL, 0.0);
+
         oapiWriteLogV("DEBUG JETTISON: TSTAGE separation routine complete.");
         break;
 
@@ -1808,6 +1874,7 @@ void Multistage2026::Jettison(int type, int current) {
         break;
 
     case TLES:
+        oapiWriteLogV("Jettison: Tower Jet");
         Spawn(type, current);
         DelMesh(Les.msh_idh);
         wLes = false;
@@ -3138,12 +3205,12 @@ void Multistage2026::clbkPreStep(double simt, double simdt, double mjd) {
     // ==========================================
     // THE C++ BROADCAST SPY
     // ==========================================
-    static double last_bus_spy = 0;
-    if (oapiGetSimTime() - last_bus_spy > 1.0) {
-        oapiWriteLogV("SPY [C++ BUS]: AP=%d | Config=%d | Prog=%d", 
-                      APstat, Configuration, VinkaStatus);
-        last_bus_spy = oapiGetSimTime();
-    }
+    //static double last_bus_spy = 0;
+    //if (oapiGetSimTime() - last_bus_spy > 1.0) {
+    //    oapiWriteLogV("SPY [C++ BUS]: AP=%d | Config=%d | Prog=%d", 
+    //                  APstat, Configuration, VinkaStatus);
+    //    last_bus_spy = oapiGetSimTime();
+    //}
 
     // 2. Pad Detachment Logic (Launchpad Object)
     if ((wRamp) && (!HangarMode)) {
@@ -3595,61 +3662,30 @@ void Multistage2026::CreateCamera() {
 // Pad Logic & Getters
 // ==============================================================
 void Multistage2026::Ramp(bool alreadyramp) {
-    // 1. Correct Debug Log
     oapiWriteLog((char*)"DEBUG: Ramp() Called! Initializing Launch Clamp...");
 
-    // If enabled, spawns the launch clamp/tower mesh at the base
     if ((wRamp) && (!HangarMode)) {
         VESSELSTATUS2 vs;
         memset(&vs, 0, sizeof(vs));
         vs.version = 2;
         GetStatusEx(&vs);
 
-        // Spawn a generic "Stage" vessel as the static pad
-        // This relies on the 'PAD_MODULE' defined in config (default: EmptyModule or Stage)
         hramp = oapiCreateVesselEx("Pad", Misc.PadModule, &vs);
 
         if (oapiIsVessel(hramp)) {
             vramp = (VESSEL3*)oapiGetVesselInterface(hramp);
 
             // 2. Create Attachment Points (The "Hard Clamp")
-            // Pad Attachment (On the ground)
             padramp = vramp->CreateAttachment(false, _V(0, 0, 0), _V(0, 1, 0), _V(0, 0, 1), (char*)"Pad", false);
-            
-            // Rocket Attachment (On the nozzle/base)
-            // MsPadZ is defined in the class (default -50, or from INI via ATTMSPAD)
             AttToRamp = CreateAttachment(TRUE, MsPadZ, _V(0, 0, -1), _V(0, 1, 0), (char*)"Pad", false);
 
             // 3. Attach the Rocket to the Pad
             vramp->AttachChild(GetHandle(), padramp, AttToRamp);
 
-            // 4. Load Visual Mesh (Safety Hardened)
-            MESHHANDLE hMesh = NULL;
-
-            // Attempt 1: KLC39B (Best fit for SLS)
-            hMesh = oapiLoadMeshGlobal("KLC39B");
-            
-            // Attempt 2: Standard Pad (Fallback if KLC is missing)
-            if (hMesh == NULL) {
-                oapiWriteLog((char*)"WARNING: KLC39B.msh not found. Trying default Pad.msh...");
-                hMesh = oapiLoadMeshGlobal("Pad");
-            }
-
-            // Attempt 3: Project Alpha (Another common fallback)
-            if (hMesh == NULL) {
-                 oapiWriteLog((char*)"WARNING: Pad.msh not found. Trying ProjectAlpha_Pad.msh...");
-                 hMesh = oapiLoadMeshGlobal("ProjectAlpha_Pad");
-            }
-
-            // 5. Add Mesh (Only if valid)
-            if (hMesh != NULL) {
-                const VECTOR3 zero = _V(0,0,0);
-                vramp->AddMesh(hMesh, &zero);
-                oapiWriteLog((char*)"DEBUG: Ramp Mesh Added Successfully.");
-            } else {
-                // If this happens, the rocket will still be clamped (safe), but the pad will be invisible.
-                oapiWriteLog((char*)"CRITICAL ERROR: No suitable Pad mesh found! Ramp will function but is invisible.");
-            }
+            // 4. VISUAL MESH DISABLED
+            // We intentionally skip loading "KLC39B" here so the physics clamp remains invisible,
+            // allowing the scenario's highly detailed pad scenery to shine without overlapping.
+            oapiWriteLog((char*)"DEBUG: Ramp physics engaged. Visual clone disabled.");
         } else {
              oapiWriteLog((char*)"ERROR: Failed to create Pad vessel.");
         }

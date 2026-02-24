@@ -72,6 +72,45 @@ VECTOR4F Multistage2026::CharToVec4(const std::string& str)
 }
 
 // ==============================================================
+// Transient Config Generator
+// ==============================================================
+void GenerateTransientConfig(const std::string& meshname, const std::string& module, double height, double emptyMass) {
+    if (meshname.empty()) return;
+
+    // Safety Clamps: Prevent Physics Engine Divide-by-Zero
+    double safeMass = (emptyMass <= 0.0) ? 1000.0 : emptyMass; 
+    double safeSize = (height <= 0.0) ? 1.0 : (height / 2.0);
+
+    // 1. Scrub Windows Carriage Returns (\r) and newlines from the module string
+    std::string clean_mod = module;
+    clean_mod.erase(std::remove(clean_mod.begin(), clean_mod.end(), '\r'), clean_mod.end());
+    clean_mod.erase(std::remove(clean_mod.begin(), clean_mod.end(), '\n'), clean_mod.end());
+    clean_mod.erase(std::remove(clean_mod.begin(), clean_mod.end(), ' '), clean_mod.end());
+
+    // 2. Flatten the mesh name to create a safe Linux filename
+    char flat_name[256];
+    strncpy(flat_name, meshname.c_str(), 255);
+    flat_name[255] = '\0';
+    for (int k = 0; flat_name[k] != '\0'; k++) {
+        if (flat_name[k] == '/' || flat_name[k] == '\\') flat_name[k] = '_';
+    }
+
+    char cfgPath[512];
+    snprintf(cfgPath, sizeof(cfgPath), "Config/%s.cfg", flat_name);
+    FILE* fCfg = fopen(cfgPath, "w");
+    if (fCfg) {
+        // Now the comparison will work perfectly
+        if (clean_mod != "Stage" && clean_mod != "EmptyModule") {
+            fprintf(fCfg, "Module = %s\n", clean_mod.c_str());
+        }
+        fprintf(fCfg, "MeshName = %s\n", meshname.c_str());
+        fprintf(fCfg, "Size = %.2f\n", safeSize); 
+        fprintf(fCfg, "EmptyMass = %.2f\n", safeMass);
+        fclose(fCfg);
+    }
+}
+
+// ==============================================================
 // Interstage Parsing
 // ==============================================================
 void Multistage2026::parseInterstages(char* filename, int parsingstage) {
@@ -117,6 +156,11 @@ void Multistage2026::parseInterstages(char* filename, int parsingstage) {
         stage.at(parsingstage).interstage.currDelay = stage.at(parsingstage).interstage.separation_delay;
 
         nInterstages++;
+        // Generate Transient Config for the Interstage
+        GenerateTransientConfig(stage.at(parsingstage).interstage.meshname, 
+                                stage.at(parsingstage).interstage.module, 
+                                stage.at(parsingstage).interstage.height, 
+                                stage.at(parsingstage).interstage.emptymass);
         // --- PHASE 1 DEBUG: INTERSTAGE ---
         oapiWriteLogV("PARSER: Interstage %d | Mesh: %s | Offset Z: %.3f",
             parsingstage + 1, meshname,stage.at(parsingstage).interstage.off.z
@@ -267,6 +311,8 @@ void Multistage2026::parseStages(char* filename) {
            stage[i].expbolt.dir = _V(0,0,1);
            stage[i].expbolt.anticipation = ini.GetDoubleValue(sectionName, "expbolts_anticipation", 1.0);
         }
+        // Generate Transient Config for the Stage
+        GenerateTransientConfig(stage[i].meshname, stage[i].module, stage[i].height, stage[i].emptymass);
         // --- PHASE 1 DEBUG: STAGE ---
         oapiWriteLogV("PARSER: Stage %d Configured | Mesh: %s | Offset Z: %.3f", 
             i + 1, stage[i].meshname, stage[i].off.z);
@@ -368,6 +414,12 @@ void Multistage2026::parseBoosters(char* filename) {
             booster.at(b).expbolt.anticipation = ini.GetDoubleValue(sectionName, "expbolts_anticipation", 1.0);
         } else {
             booster.at(b).expbolt.wExpbolt = FALSE;
+        }
+        // Generate Transient Configs for all instances of this booster
+        for (int i = 1; i <= booster.at(b).N; i++) {
+            char mn[256];
+            snprintf(mn, sizeof(mn), "%s_%d", booster.at(b).meshname.c_str(), i);
+            GenerateTransientConfig(mn, booster.at(b).module, booster.at(b).height, booster.at(b).emptymass);
         }
     }
 }
@@ -504,6 +556,9 @@ void Multistage2026::parseLes(char* filename) {
         Les.diameter = ini.GetDoubleValue(sectionName, "diameter", 0.0);
         Les.emptymass = ini.GetDoubleValue(sectionName, "emptymass", 0.0);
 
+        // Generate Transient Config for the LES
+        GenerateTransientConfig(Les.meshname, Les.module, Les.height, Les.emptymass);
+
         // --- PHASE 1 DEBUG: LES ---
         oapiWriteLogV("PARSER: LES System Configured | Mesh: %s | X,Y,Z: (%.3f, %.3f, %.3f)",
            meshname, Les.off.x, Les.off.y, Les.off.z);
@@ -577,6 +632,13 @@ void Multistage2026::parseFairing(char* filename) {
         fairing.diameter = ini.GetDoubleValue(sectionName, "diameter", 0.0);
         fairing.angle = ini.GetDoubleValue(sectionName, "angle", 0.0);
         fairing.emptymass = ini.GetDoubleValue(sectionName, "emptymass", 0.0);
+
+        // Generate Transient Configs for all Fairing panels
+        for (int i = 1; i <= fairing.N; i++) {
+            char mn[256];
+            snprintf(mn, sizeof(mn), "%s_%d", fairing.meshname.c_str(), i);
+            GenerateTransientConfig(mn, fairing.module, fairing.height, fairing.emptymass);
+        }
 
         // --- IMPROVED LOGGING ---
         oapiWriteLogV("PARSER: Fairing Configured | N=%i Mesh=%s | X,Y,Z: (%.3f, %.3f, %.3f)",

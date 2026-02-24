@@ -374,12 +374,11 @@ void Multistage2026::VinkaComposeGNCSteps() {
             default:
                 // One-Shot triggers like JETTISON, LES, FAIRING, PLAY, EXPLODE
                 Gnc_step[i].time_init = Gnc_step[i].time;
-                // Explicitly set time_fin to time_init so the event fires once and marks as done
-                Gnc_step[i].time_fin = Gnc_step[i].time_init; 
-                break;
-            }
+                // FIX: Give it a 1.0 second duration so it survives the safety check!
+                Gnc_step[i].time_fin = Gnc_step[i].time_init + 1.0; 
+                Gnc_step[i].val_init = Gnc_step[i].trval1;
+                break;            }
         }
-
     if (!wPeg) {
         VinkaUpdateRollTime();
     }
@@ -389,117 +388,106 @@ void Multistage2026::VinkaComposeGNCSteps() {
 // Step Consumption (Runtime)
 // ==============================================================
 void Multistage2026::VinkaConsumeStep(int step) {
+    int cmd = Gnc_step[step].GNC_Comand;
 
-    // 1. Frame-Rate Safety: Stop processing if this step is already done
+    // ========================================================
+    // 1. ONE-SHOT COMMANDS (Immune to the Timeline Trap)
+    // ========================================================
+    if (cmd == CM_LES || cmd == CM_FAIRING || cmd == CM_JETTISON || cmd == CM_DESTROY || cmd == CM_PLAY || cmd == CM_EXPLODE) {
+        switch (cmd) {
+            case CM_FAIRING:
+                oapiWriteLog((char*)"DEBUG SPY: Physically Executing TFAIRING");
+                if (wFairing == 1) Jettison(TFAIRING, 0);
+                break;
+            case CM_LES:
+                oapiWriteLog((char*)"DEBUG SPY: Physically Executing TLES");
+                if (wLes) Jettison(TLES, 0);
+                break;
+            case CM_JETTISON:
+                oapiWriteLog((char*)"DEBUG SPY: Physically Executing JETTISON");
+                if (currentBooster < nBoosters) Jettison(TBOOSTER, currentBooster);
+                else if (currentStage < nStages - 1) Jettison(TSTAGE, currentStage);
+                break;
+            case CM_DESTROY:
+            case CM_EXPLODE:
+                oapiWriteLog((char*)"DEBUG SPY: Executing DESTROY/EXPLODE");
+                boom(); // Calls the catastrophic failure function we saw in Multistage2026.cpp
+                break;
+            case CM_PLAY:
+                // Note: Actual audio requires XRSound or OrbiterSound API integration.
+                // For now, we log it and mark it executed so the autopilot doesn't freeze!
+                oapiWriteLogV("OTTO: Sound playback triggered at step %d", step);
+                break;
+        }
+        // Force the step to close instantly so it doesn't loop or trap the timeline
+        Gnc_step[step].executed = TRUE; 
+        return; // EXIT FUNCTION NOW
+    }
+
+    // ========================================================
+    // 2. CONTINUOUS COMMANDS (Engine, Pitch, Roll, Orbit)
+    // ========================================================
     if (Gnc_step[step].time_fin <= MET) { 
         Gnc_step[step].executed = TRUE; 
     }
 
     if (Gnc_step[step].executed == FALSE) {
-        switch (Gnc_step[step].GNC_Comand) {
-        case CM_ENGINE: {
-            // 1. Smooth Ramp Calculation for Main Engines
-            double time_elapsed = MET - Gnc_step[step].time_init;
-            double thrust_target = Gnc_step[step].val_init + ((Gnc_step[step].val_fin - Gnc_step[step].val_init) * (time_elapsed / Gnc_step[step].duration));
-            // Safety clamps to prevent over/under throttling via bad math
-            if (thrust_target > 100.0) thrust_target = 100.0;
-            if (thrust_target < 0.0) thrust_target = 0.0;
-            SetThrusterGroupLevel(THGROUP_MAIN, thrust_target / 100.0);
+        switch (cmd) {
+            case CM_ENGINE: {
+                double progress = (MET - Gnc_step[step].time_init) / (Gnc_step[step].time_fin - Gnc_step[step].time_init);
+                double DesiredEngineLevel = (Gnc_step[step].val_init + (Gnc_step[step].val_fin - Gnc_step[step].val_init) * progress) / 100.0;
+                SetThrusterGroupLevel(THGROUP_MAIN, DesiredEngineLevel);
 
-            // 2. THE BOOSTER IGNITION TRIGGER (Lighting the Candle)
-            if (MET >= 0.0 && Gnc_step[step].val_fin > 0) {
-                for (int kb = 0; kb < nBoosters; kb++) {
-                    if (booster[kb].Ignited == false) {
-                        booster[kb].Ignited = true;
-                        booster[kb].IgnitionTime = MET;
-                    }
-                }
-            }
-            break;
-        }
-
-        case CM_ROLL:
-            // Refactored for smooth bank transition (Backwards Compatible)
-            VinkaRoll(step);
-            break;
-
-        case CM_PITCH:
-            VinkaPitch(step);
-            break;
-
-        case CM_FAIRING:
-            // Altitude-based jettison check from MS2015 documentation
-            if ((wFairing == 1) && (GetAltitude() >= Gnc_step[step].val_init)) {
-                Jettison(TFAIRING, 0);
-                Gnc_step[step].executed = TRUE;
-            }
-            break;
-
-        case CM_LES:
-            if ((wLes == TRUE) && (GetAltitude() >= Gnc_step[step].val_init)) {
-                Jettison(TLES, 0);
-                Gnc_step[step].executed = TRUE;
-            }
-            break;
-
-        case CM_JETTISON:
-            // TIMED JETTISON: This replaces the unstable mass-checker
-            if (currentBooster < nBoosters) {
-                Jettison(TBOOSTER, currentBooster);
-            } else if (currentStage < nStages - 1) {
-                Jettison(TSTAGE, currentStage);
-            }
-            Gnc_step[step].executed = TRUE;
-            // LINUX STABILITY: Exit function to let pointers settle after staging
-            return; 
-
-        case CM_ORBIT:
-            // Full Sequence Autopilot Implementation
-            if (Configuration == 1) { 
-                runningPeg = TRUE;
-                double alt = GetAltitude();
-
-                // Phase 1: Tower Clearance
-                if (alt < altsteps[0]) {
-                    TgtPitch = 90 * RAD - Misc.VerticalAngle;
-                    Attitude(TgtPitch, GetBank(), GetHeading(), 8, 0, 5);
-                }
-                // Phase 2: Roll Program
-                else if (alt >= altsteps[0] && alt < altsteps[1]) {
-                    TgtPitch = 89.9 * RAD - Misc.VerticalAngle;
-                    Attitude(TgtPitch, (0.5 * (1 - VinkaMode) * PI), GetProperHeading(), 8, 20, 5);
-                }
-                // Phase 3: Initial Pitch-Over
-                else if (alt >= altsteps[1] && alt < altsteps[2]) {
-                    TgtPitch = GT_InitPitch;
-                    double deltaAlt = altsteps[2] - alt;
-                    double deltaT = sqrt((2 * deltaAlt) / (1.5 * getabsacc() - 9.80665));
-                    double pRate = fabs((GetPitch() - GT_InitPitch) / deltaT);
-                    Attitude(GT_InitPitch, (0.5 * (1 - VinkaMode) * PI), GetProperHeading(), pRate * DEG, 20, pRate * DEG);
-                }
-                // Phase 4: Open-Loop Gravity Turn
-                else if (alt >= altsteps[2] && alt < altsteps[3]) {
-                    VinkaStatus = PROG_ASCENTGT;
-                    double DesiredP = GetPitch() - VinkaMode * GetAOA() + (-0.7 * RAD);
-                    TgtPitch = DesiredP;
-                    Attitude(DesiredP, (0.5 * (1 - VinkaMode) * PI), GetProperHeading(), 8, 5, 8);
-                }
-                // Phase 5: PEG Closed-Loop Guidance
-                else {
-                    if (GetThrusterGroupLevel(THGROUP_MAIN) > 0.1) {
-                        PEG();
-                        if (CutoffCheck() == TRUE) {
-                            Gnc_step[step].executed = TRUE;
+                // Booster Ignition Trigger
+                if (MET >= 0.0 && Gnc_step[step].val_fin > 0) {
+                    for (int kb = 0; kb < nBoosters; kb++) {
+                        if (booster[kb].Ignited == false) {
+                            booster[kb].Ignited = true;
+                            booster[kb].IgnitionTime = MET;
                         }
                     }
                 }
+                break;
             }
-            break;
+            case CM_ROLL:
+                VinkaRoll(step);
+                break;
+            case CM_PITCH:
+                VinkaPitch(step);
+                break;
+            case CM_ORBIT: {
+                if (Configuration == 1) { 
+                    runningPeg = TRUE;
+                    double alt = GetAltitude();
 
-        case CM_DESTROY:
-            Gnc_step[step].executed = TRUE;
-            oapiDeleteVessel(GetHandle());
-            break;
+                    if (alt < altsteps[0]) {
+                        TgtPitch = 90 * RAD - Misc.VerticalAngle;
+                        Attitude(TgtPitch, GetBank(), GetHeading(), 8, 0, 5);
+                    } else if (alt >= altsteps[0] && alt < altsteps[1]) {
+                        TgtPitch = 89.9 * RAD - Misc.VerticalAngle;
+                        Attitude(TgtPitch, (0.5 * (1 - VinkaMode) * PI), GetProperHeading(), 8, 20, 5);
+                    } else if (alt >= altsteps[1] && alt < altsteps[2]) {
+                        TgtPitch = GT_InitPitch;
+                        double deltaAlt = altsteps[2] - alt;
+                        double deltaT = sqrt((2 * deltaAlt) / (1.5 * getabsacc() - 9.80665));
+                        double pRate = fabs((GetPitch() - GT_InitPitch) / deltaT);
+                        Attitude(GT_InitPitch, (0.5 * (1 - VinkaMode) * PI), GetProperHeading(), pRate * DEG, 20, pRate * DEG);
+                    } else if (alt >= altsteps[2] && alt < altsteps[3]) {
+                        VinkaStatus = PROG_ASCENTGT;
+                        double DesiredP = GetPitch() - VinkaMode * GetAOA() + (-0.7 * RAD);
+                        TgtPitch = DesiredP;
+                        Attitude(DesiredP, (0.5 * (1 - VinkaMode) * PI), GetProperHeading(), 8, 5, 8);
+                    } else {
+                        if (GetThrusterGroupLevel(THGROUP_MAIN) > 0.1) {
+                            PEG();
+                            if (CutoffCheck() == TRUE) {
+                                Gnc_step[step].executed = TRUE;
+                            }
+                        }
+                    }
+                }
+                break;
+            }
         }
     }
 }
@@ -553,21 +541,17 @@ void Multistage2026::VinkaAutoPilot() {
     if (!APstat || Configuration == 0) return;
 
     // 3. Step Execution Loop
-    // nsteps is the total lines loaded from your guidance file (7 lines in your log) [cite: 2]
     for (int i = 1; i < nsteps; i++) {
-        // Condition: Time is right, step isn't done, and we are in flight mode 
         if (MET >= Gnc_step[i].time && !Gnc_step[i].executed) {
-            
-            // Execute the specific command (ORBIT, ROLL, PITCH, etc.)
+            // Execute the specific command
             VinkaConsumeStep(i);
-            
-            // Mark as done so it never runs again this flight
-            Gnc_step[i].executed = true; 
-
-            // Log the execution for verification in Orbiter.log
-            oapiWriteLogV("OTTO: Executed Step %d [%s] at MET %.1f", i, Gnc_step[i].Comand, MET);
+            // Only print to log when the step is OFFICIALLY finished
+            if (Gnc_step[i].executed) {
+                oapiWriteLogV("OTTO: Finished Step %d [%s] at MET %.1f", i, Gnc_step[i].Comand, MET);
+            }
         }
     }
+
     // ===========================================================
     // MASTER TELEMETRY BROADCASTER (Apollo P-Code Mapping)
     // ===========================================================
