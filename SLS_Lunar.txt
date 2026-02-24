@@ -1,0 +1,14 @@
+-4.0     engine 100 100
+0.0      engine 100 100
+5.0      playsound Sound/Vessel/TowerClear.wav
+10.0     roll 90
+15.0     orbit 200 200 28.5
+195.0    les
+205.0    fairing
+480.0    jettison
+480.1    jettison
+485.0    engine 100 100
+540.0    engine 0
+3600.0   engine 100 100
+4680.0   engine 0
+4700.0   jettison

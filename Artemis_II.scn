@@ -1,0 +1,63 @@
+BEGIN_DESC
+Artemis II: Crewed Lunar Flyby
+Target: TLI (Trans-Lunar Injection)
+Vehicle: SLS Block 1 (Crew)
+Date: Feb 8, 2026
+END_DESC
+
+BEGIN_ENVIRONMENT
+  System Sol
+  Date MJD 61133.5000; Approx April 9 2026
+  GNC_AUTO_JETTISON 0
+END_ENVIRONMENT
+
+BEGIN_FOCUS
+  Ship SLS_Artemis_II
+END_FOCUS
+
+BEGIN_CAMERA
+  TARGET SLS_Artemis_II
+  MODE Extern
+  POS 6.38 -0.80 -84.57
+  TRACKMODE TargetRelative
+  FOV 50.00
+  BEGIN_PRESET
+    Ground:SLS_Artemis_II:40.00:Earth -80.62339 28.61960 110.00
+    Track:SLS_Artemi_II:50.00:RELATIVE 2.890 -0.009 -1.229
+    Ground:SLS_Artemis_II:10.00:Earth -80.65298 28.58028 20.00
+    Track:ISS:40.00:RELATIVE 1.983 -0.474 -0.522
+    Track:Earth:40.00:GLOBAL 2.896 2.132 -0.331
+  END_PRESET
+END_CAMERA
+
+BEGIN_HUD
+  TYPE MS26Spy
+END_HUD
+
+BEGIN_MFD Left
+  TYPE Surface
+END_MFD
+
+BEGIN_MFD Right
+  TYPE Orbit
+  PROJ Ship
+  FRAME Equator
+  REF Earth
+END_MFD
+
+BEGIN_SHIPS
+SLS_Artemis_II:Multistage2026
+  STATUS Landed Earth
+  HEADING 90.00
+  ALT 65
+  AFCMODE 7
+  POS -80.6209250 28.62717900
+  AFCMODE 7
+  PRPLEVEL 0:1.000 1:1.000 2:1.000 3:1.000
+  NAVFREQ 0 0
+  RAMP
+  ATT_TO_MSPAD -76
+  CONFIG_FILE Config/Multistage2026/SLS_Block1.ini
+  GUIDANCE_FILE Config/Multistage2026/Guidance/SLS_Lunar.txt
+END
+END_SHIPS
